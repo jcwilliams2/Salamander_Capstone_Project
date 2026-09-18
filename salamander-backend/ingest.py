@@ -85,14 +85,6 @@ def backfill_missing_embeddings():
             supabase.table("books").update({"embedding": embedding}).eq("id", row["id"]).execute()
             print(f" Backfilled embedding for book id {row['id']}")
 
-def query_similar_books(query_vector, exclude_ids=None, limit=10):
-    result = supabase.rpc('match_books', {
-        'query_embedding': query_vector,
-        'match_count': limit,
-        'exclude_ids': exclude_ids or []
-    }).execute()
-    return result.data
-
 def clean_description(text):
     if not text:
         return None
@@ -326,8 +318,6 @@ def get_book_metadata(isbn):
     primary["embedding"] = generate_embedding(embedding_text)
 
     return primary
-
-
 
 def insert_book(book_data):
     if not book_data or not book_data.get("title"):
