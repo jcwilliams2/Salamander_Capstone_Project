@@ -3,12 +3,9 @@ import re
 import time
 import requests
 import html
-from supabase import create_client
-from dotenv import load_dotenv
 from langdetect import detect, LangDetectException
 from sentence_transformers import SentenceTransformer
-
-load_dotenv()
+from supabase_client import supabase
 
 GENRE_KEYWORD_MAP = {
     "fantasy": "fantasy",
@@ -54,11 +51,6 @@ GENRE_KEYWORD_MAP = {
     "fiction": "fiction",
 }
 
-supabase = create_client(
-    os.environ["SUPABASE_URL"],
-    os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-)
-
 HEADERS = {"User-Agent": "Salamander-Capstone-Project/1.0 (jcwilliams14@student.fullsail.edu)"}
 ISBNDB_HEADERS = {"Authorization": os.environ["ISBNDB_API_KEY"]}
 
@@ -75,16 +67,6 @@ def build_embedding_text(title, description):
         return f"{title}. {description}" if title else description
     return title
 
-def backfill_missing_embeddings():
-    result = supabase.table("books").select("id, title, description").is_("embedding", "null").execute()
-    print(f"Found {len(result.data)} books missing embeddings.")
-    for row in result.data:
-        embedding_text = build_embedding_text(row["title"], row["description"])
-        embedding = generate_embedding(embedding_text)
-        if embedding:
-            supabase.table("books").update({"embedding": embedding}).eq("id", row["id"]).execute()
-            print(f" Backfilled embedding for book id {row['id']}")
-
 def clean_description(text):
     if not text:
         return None
@@ -92,17 +74,6 @@ def clean_description(text):
     text = re.sub(r'<[^>]+>', ' ', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text if len(text) > 20 else None
-
-def reclean_existing_descriptions():
-    result = supabase.table("books").select("id, description").execute()
-    updated = 0
-    for row in result.data:
-        cleaned = clean_description(row["description"])
-        if cleaned != row["description"]:
-            supabase.table("books").update({"description": cleaned}).eq("id", row["id"]).execute()
-            print(f" Re-cleaned book id {row['id']}")
-            updated += 1
-    print(f"Re-cleaned {updated}/{len(result.data)} books.")
 
 def is_english(text):
     if not text:
@@ -349,7 +320,4 @@ def ingest_isbn_list(isbn_list):
     print(f"Ingested {successes}/{len(isbn_list)}. Failed: {failures}")
 
 if __name__ == "__main__":
-    hobbit = supabase.table("books").select("id, embedding").eq("isbn", "9780547928227").execute()
-    similar = query_similar_books(hobbit.data[0]["embedding"], exclude_ids=[hobbit.data[0]["id"]])
-    for book in similar:
-        print(f"{book['title']} by {book['author']} — similarity: {book['similarity']:.3f}")
+    print("Nothing to see here.")
