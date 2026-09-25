@@ -1,4 +1,5 @@
 import numpy as np
+import json
 from supabase_client import supabase
 
 def get_coldstart_path(user_books):
@@ -11,8 +12,15 @@ def get_coldstart_path(user_books):
         return "broader_history"
 
 def sparse_history_recommend(user_books, n=10):
-    embeddings = np.array([b['embedding'] for b in user_books])
-    user_vector = embeddings.mean(axis=0)
+    parsed_embeddings = []
+    for b in user_books:
+        emb = b['embedding']
+        if isinstance(emb, str):
+            emb = json.loads(emb)
+        parsed_embeddings.append(emb)
+
+    embeddings = np.array(parsed_embeddings, dtype=float)
+    user_vector = embeddings.mean(axis=0).tolist()
     exclude_ids = [b['id'] for b in user_books]
     candidates = query_similar_books(user_vector, exclude_ids=exclude_ids, limit=(n * 2))
     return candidates[:n]
