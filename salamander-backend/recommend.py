@@ -19,6 +19,28 @@ def query_similar_books(query_vector, exclude_ids=None, limit=10):
     }).execute()
     return result.data
 
+def explain_recommendation(book, user_books=None, selected_genres=None):
+    if user_books:
+        similarities = []
+        for b in user_books:
+            b_emb = b['embedding']
+            if isinstance(b_emb, str):
+                b_emb = json.loads(b_emb)
+            rec_emb = book.get('embedding')
+            if isinstance(rec_emb, str):
+                rec_emb = json.loads(rec_emb)
+            if rec_emb is not None:
+                sim = np.dot(b_emb, rec_emb) / (np.linalg.norm(b_emb) * np.linalg.norm(rec_emb))
+                similarities.append((b, sim))
+        if similarities:
+            closest = max(similarities, key=lambda x: x[1])
+            return f"Recommended because of similarity to '{closest[0]['title']}'"
+
+    if selected_genres:
+        return f"Recommended based on your interest in {selected_genres[0]}"
+
+    return "Recommended based on popularity"
+
 def sparse_history_recommend(user_books, n=10):
     parsed_embeddings = []
     for b in user_books:
@@ -35,13 +57,21 @@ def sparse_history_recommend(user_books, n=10):
 
 def zero_history_recommend(selected_genres=None, seed_books=None, genre_centroids=None, n=10):
     if seed_books:
-        return sparse_history_recommend(seed_books, n)
+        recs = sparse_history_recommend(seed_books, n)
+        for book in recs:
+            book['explanation'] = explain_recommendation(book, user_books=seed_books)
+            book.pop('embedding', None)
+        return recs
     elif selected_genres and genre_centroids:
         vectors = [genre_centroids[g] for g in selected_genres if g in genre_centroids]
         if not vectors:
             return popularity_baseline_recommend(n)
         genre_vector = np.array(vectors, dtype=float).mean(axis=0).tolist()
-        return query_similar_books(genre_vector, limit=n)
+        recs = query_similar_books(genre_vector, limit=n)
+        for book in recs:
+            book['explanation'] = explain_recommendation(book, selected_genres=selected_genres)
+            book.pop('embedding', None)
+        return recs
     else:
         return popularity_baseline_recommend(n)
 
