@@ -100,24 +100,44 @@ def build_genre_centroids():
 
     return centroids
 
+def diversity_centroid(user_books):
+    parsed_embeddings = []
+
+    for b in user_books:
+        emb = b['embedding']
+        if isinstance(emb, str):
+            emb = json.loads(emb)
+        parsed_embeddings.append(emb)
+
+    embeddings = np.array(parsed_embeddings, dtype=float)
+    return embeddings.mean(axis=0)
+
+def cosine_distance(a, b):
+    a, b = np.array(a), np.array(b)
+    return (1 - (np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))))
+
+def diversity_score(user_books):
+    if len(user_books) < 3:
+        return None
+    centroid = diversity_centroid(user_books)
+    distances = []
+    for b in user_books:
+        emb = b['embedding']
+        if isinstance(emb, str):
+            emb = json.loads(emb)
+        distances.append(cosine_distance(emb, centroid))
+    return float(np.mean(distances))
+
 if __name__=="__main__":
-    centroids = build_genre_centroids()
-    print(f"Built centroids for {len(centroids)} genres: {list(centroids.keys())}")
+    narrow_isbns = ["9780547928227", "9780756404741", "9780316556347", "9780441478125"]
+    broad_isbns = ["9780547928227", "9780399590504", "9781476753836", "9780679745587"]
 
-    recommendations = zero_history_recommend(selected_genres=["fantasy"], genre_centroids=centroids)
-    print("\n--- Test 1: Genre selection ('fantasy') ---")
-    for book in recommendations:
-        print(f" {book['title']} by {book.get('author', 'Unknown')}")
+    narrow_books = supabase.table("books").select("id, title, embedding").in_("isbn", narrow_isbns).execute().data
+    broad_books = supabase.table("books").select("id, title, embedding").in_("isbn", broad_isbns).execute().data
 
-    print("\n--- Test 2: Seed books (Hobbit, Name of the Wind, Circe) ---")
-    seed_books = supabase.table("books").select("id, title, embedding").in_(
-        "isbn", ["9780547928227", "9780756404741", "9780316556347"]
-    ).execute().data
-    recommendations = zero_history_recommend(seed_books=seed_books, genre_centroids=centroids)
-    for book in recommendations:
-        print(f" {book['title']} by {book.get('author', 'Unknown')}")
+    narrow = diversity_score(narrow_books)
+    broad = diversity_score(broad_books)
 
-    print("\n--- Test 3: No selection at all (fallback) ---")
-    recommendations = zero_history_recommend(genre_centroids=centroids)
-    for book in recommendations:
-        print(f" {book['title']} by {book.get('author', 'Unknown')}")
+    print(f"Narrow reader (all fantasy/sci-fi) diversity score: {narrow:.4f}")
+    print(f"Broad reader (fantasy/memoir/cooking/true crime) diversity score: {broad:.4f}")
+    print(f"\nDoes narrow < broad? {narrow < broad}")
