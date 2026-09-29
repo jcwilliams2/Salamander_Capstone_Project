@@ -216,14 +216,57 @@ def find_diversity_gaps(user_books, all_books_with_embeddings, n=5, min_percenti
 
     return results
 
+def evaluate_recommender(user_profiles, k=1, n=10):
+    hits, total = 0, 0
+    for profile in user_profiles:
+        if len(profile) <= k:
+            continue
+        held_out = profile[-k:]
+        visible = profile[:-k]
+        recs = sparse_history_recommend(visible, n=n)
+        rec_ids = set(r['id'] for r in recs)
+        held_out_ids = set(b['id'] for b in held_out)
+        hits += len(rec_ids & held_out_ids)
+        total += len(held_out_ids)
+    return hits / total if total else None
+
+def evaluate_popularity_baseline(user_profiles, k=1, n=10):
+    hits, total = 0, 0
+    for profile in user_profiles:
+        if len(profile) <= k:
+            continue
+        held_out = profile[-k:]
+        recs = popularity_baseline_recommend(n=n)
+        rec_ids = set(r['id'] for r in recs)
+        held_out_ids = set(b['id'] for b in held_out)
+        hits += len(rec_ids & held_out_ids)
+        total += len(held_out_ids)
+    return hits / total if total else None
+
 if __name__=="__main__":
-    narrow_isbns = ["9780547928227", "9780756404741", "9780316556347", "9780441478125"]
-    narrow_books = supabase.table("books").select("id, title, embedding, genre_tags").in_("isbn", narrow_isbns).execute().data
+    def fetch(isbns):
+        return supabase.table("books").select("id, title, embedding").in_("isbn", isbns).execute().data
+    
+    fantasy_profile = fetch([
+        "9780547928227", "9780756404741", "9780316556347", "9780441478125",
+        "9780441172719", "9780547773742", "9780553293357"
+    ])
+    mystery_profile = fetch([
+        "9780394758282", "9780307588371", "9781250301697", "9780307949486",
+        "9780062073563"
+    ])
+    memoir_profile = fetch([
+        "9780399590504", "9781451648539", "9780345350688", "9780807014295"
+    ])
+    selfhelp_profile = fetch([
+        "9780735211292", "9781982137274", "9780374533557", "9780804139298"
+    ])
 
-    all_books = supabase.table("books").select("id, title, author, embedding, genre_tags").execute().data
+    profiles = [fantasy_profile, mystery_profile, memoir_profile, selfhelp_profile]
 
-    gaps = find_diversity_gaps(narrow_books, all_books, n=5)
+    recommender_hit_rate = evaluate_recommender(profiles, k=1)
+    baseline_hit_rate = evaluate_popularity_baseline(profiles, k=1)
 
-    print("Diversity gap suggestions for a fanatasy-only reader:")
-    for book in gaps:
-        print(f" {book['title']} by {book.get('author', 'Unknown')} — distance: {book['distance']:.4f}")
+    print(f"Content-based recommender hit rate: {recommender_hit_rate:.4f}")
+    print(f"Popularity baseline hit rate: {baseline_hit_rate:.4f}")
+    print(f"\nDoes recommender outperform baseline? {recommender_hit_rate > baseline_hit_rate}")
