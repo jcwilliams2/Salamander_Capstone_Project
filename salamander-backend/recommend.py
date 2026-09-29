@@ -2,6 +2,45 @@ import numpy as np
 import json
 from supabase_client import supabase
 
+GENRE_ADJACENCY = {
+    "fantasy": {"science fiction", "historical fiction", "young adult", "mystery", "horror", "graphic novel"},
+    "science fiction": {"fantasy", "mystery", "thriller"},
+    "mystery": {"thriller", "crime fiction", "horror", "literary fiction"},
+    "thriller": {"mystery", "crime fiction", "horror"},
+    "romance": {"literary fiction", "young adult", "historical fiction"},
+    "horror": {"fantasy", "mystery", "thriller"},
+    "historical fiction": {"literary fiction", "biography", "fantasy", "romance"},
+    "literary fiction": {"historical fiction", "memoir", "romance", 'mystery'},
+    "biography": {"memoir", "literary fiction", "psychology"},
+    "memoir": {"biography", "literary fiction", "psychology"},
+    "young adult": {"fantasy", "romance", "science fiction"},
+    "childrens": {"young adult", "fantasy"},
+    "poetry": {"literary fiction", "memoir"},
+    "graphic novel": {"fantasy", "science fiction", "humor"},
+    "self help": {"psychology", "business"},
+    "history": {"biography", "politics"},
+    "science": {"science fiction", "history"},
+    "philosophy": {"psychology", "religion"},
+    "religion": {"philosophy", "history"},
+    "business": {"self help", "psychology"},
+    "true crime": {"crime fiction", "mystery"},
+    "crime fiction": {"mystery", "thriller", "true crime"},
+    "humor": {"graphic novel", "literary fiction"},
+    "cooking": {"travel"},
+    "travel": {"memoir", "cooking"},
+    "psychology": {"self help", "memoir", "philosophy"},
+    "politics": {"history", "philosophy"},
+    "sports": {"biography"},
+    "nonfiction": set(),
+    "fiction": set(),
+}
+
+def get_adjacent_genres(user_genre_tags):
+    adjacent = set()
+    for genre in user_genre_tags:
+        adjacent.update(GENRE_ADJACENCY.get(genre, set()))
+    return adjacent
+
 def get_coldstart_path(user_books):
     n = len(user_books)
     if n == 0:
@@ -128,16 +167,63 @@ def diversity_score(user_books):
         distances.append(cosine_distance(emb, centroid))
     return float(np.mean(distances))
 
+def find_diversity_gaps(user_books, all_books_with_embeddings, n=5, min_percentile=40, max_percentile=75):
+    if len(user_books) < 3:
+        return []
+
+    centroid = diversity_centroid(user_books)
+    user_ids = set(b['id'] for b in user_books)
+
+    user_genres = set()
+    for b in user_books:
+        tags = b.get('genre_tags')
+        if tags:
+            user_genres.update(tags)
+    adjacent_genres = get_adjacent_genres(user_genres)
+
+    candidates = []
+    for book in all_books_with_embeddings:
+        if book['id'] in user_ids:
+            continue
+
+        book_genres = set(book.get('genre_tags') or [])
+        if not book_genres & adjacent_genres:
+            continue
+
+        emb = book['embedding']
+        if isinstance(emb, str):
+            emb = json.loads(emb)
+        dist = cosine_distance(emb, centroid)
+        candidates.append((book, dist))
+
+    if not candidates:
+        return []
+    
+    distances_only = [d for _, d in candidates]
+    min_dist = np.percentile(distances_only, min_percentile)
+    max_dist = np.percentile(distances_only, max_percentile)
+    mid_dist = (min_dist + max_dist) /2
+
+    in_range = [(b, d) for b, d in candidates if min_dist <= d <= max_dist]
+    in_range.sort(key=lambda x: abs(x[1] - mid_dist))
+
+    results = []
+    for book, dist in in_range:
+        if len(results) >= n:
+            break
+        book['distance'] = dist
+        results.append(book)
+
+    return results
+
 if __name__=="__main__":
     narrow_isbns = ["9780547928227", "9780756404741", "9780316556347", "9780441478125"]
-    broad_isbns = ["9780547928227", "9780399590504", "9781476753836", "9780679745587"]
+    narrow_books = supabase.table("books").select("id, title, embedding, genre_tags").in_("isbn", narrow_isbns).execute().data
 
-    narrow_books = supabase.table("books").select("id, title, embedding").in_("isbn", narrow_isbns).execute().data
-    broad_books = supabase.table("books").select("id, title, embedding").in_("isbn", broad_isbns).execute().data
+    all_books = supabase.table("books").select("id, title, author, embedding, genre_tags").execute().data
 
-    narrow = diversity_score(narrow_books)
-    broad = diversity_score(broad_books)
+    gaps = find_diversity_gaps(narrow_books, all_books, n=5)
 
-    print(f"Narrow reader (all fantasy/sci-fi) diversity score: {narrow:.4f}")
-    print(f"Broad reader (fantasy/memoir/cooking/true crime) diversity score: {broad:.4f}")
-    print(f"\nDoes narrow < broad? {narrow < broad}")
+    print("Diversity gap suggestions for a fanatasy-only reader:")
+    for book in gaps:
+        print(f" {book['title']} by {book.get('author', 'Unknown')} — distance: {book['distance']:.4f}")
