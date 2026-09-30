@@ -3,6 +3,8 @@ import { supabase } from './lib/supabaseClient'
 import Signup from './components/Signup'
 import Login from './components/Login'
 import Onboarding from './components/Onboarding'
+import VoteControls from './components/VoteControls'
+import StatusSelector from './components/StatusSelector'
 import './App.css'
 
 function App() {
@@ -48,6 +50,8 @@ function App() {
           <div key={book.id} style={{ marginBottom: '12px' }}>
             <strong>{book.title}</strong> by {book.author}
             <p style={{ fontSize: '0.9em', color: '#666' }}>{book.explanation}</p>
+            <VoteControls userId={session.user.id} bookId={book.id} />
+            <StatusSelector userId={session.user.id} bookId={book.id} />
           </div>
         ))}
       </div>
