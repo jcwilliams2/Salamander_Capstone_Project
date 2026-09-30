@@ -244,29 +244,35 @@ def evaluate_popularity_baseline(user_profiles, k=1, n=10):
     return hits / total if total else None
 
 if __name__=="__main__":
-    def fetch(isbns):
-        return supabase.table("books").select("id, title, embedding").in_("isbn", isbns).execute().data
-    
-    fantasy_profile = fetch([
-        "9780547928227", "9780756404741", "9780316556347", "9780441478125",
-        "9780441172719", "9780547773742", "9780553293357"
-    ])
-    mystery_profile = fetch([
-        "9780394758282", "9780307588371", "9781250301697", "9780307949486",
-        "9780062073563"
-    ])
-    memoir_profile = fetch([
-        "9780399590504", "9781451648539", "9780345350688", "9780807014295"
-    ])
-    selfhelp_profile = fetch([
-        "9780735211292", "9781982137274", "9780374533557", "9780804139298"
-    ])
+#    def fetch(isbns):
+#        return supabase.table("books").select("id, title, embedding").in_("isbn", isbns).execute().data
+#    
+#    fantasy_profile = fetch([
+#        "9780547928227", "9780756404741", "9780316556347", "9780441478125",
+#        "9780441172719", "9780547773742", "9780553293357"
+#    ])
+#    mystery_profile = fetch([
+#        "9780394758282", "9780307588371", "9781250301697", "9780307949486",
+#        "9780062073563"
+#    ])
+#    memoir_profile = fetch([
+#        "9780399590504", "9781451648539", "9780345350688", "9780807014295"
+#    ])
+#    selfhelp_profile = fetch([
+#        "9780735211292", "9781982137274", "9780374533557", "9780804139298"
+#    ])
 
-    profiles = [fantasy_profile, mystery_profile, memoir_profile, selfhelp_profile]
+#    profiles = [fantasy_profile, mystery_profile, memoir_profile, selfhelp_profile]
 
-    recommender_hit_rate = evaluate_recommender(profiles, k=1)
-    baseline_hit_rate = evaluate_popularity_baseline(profiles, k=1)
+#    recommender_hit_rate = evaluate_recommender(profiles, k=1)
+#    baseline_hit_rate = evaluate_popularity_baseline(profiles, k=1)
 
-    print(f"Content-based recommender hit rate: {recommender_hit_rate:.4f}")
-    print(f"Popularity baseline hit rate: {baseline_hit_rate:.4f}")
-    print(f"\nDoes recommender outperform baseline? {recommender_hit_rate > baseline_hit_rate}")
+#    print(f"Content-based recommender hit rate: {recommender_hit_rate:.4f}")
+#    print(f"Popularity baseline hit rate: {baseline_hit_rate:.4f}")
+#    print(f"\nDoes recommender outperform baseline? {recommender_hit_rate > baseline_hit_rate}")
+
+    hobbit = supabase.table("books").select("id, embedding").eq("isbn", "9780547928227").execute()
+    similar = query_similar_books(hobbit.data[0]["embedding"], exclude_ids=[hobbit.data[0]["id"]])
+    print("--- Hobbit similarity check (larger catalog) ---")
+    for book in similar:
+        print(f" {book["title"]} by {book["author"]} — similarity: {book["similarity"]:.3f}")
