@@ -34,3 +34,40 @@ def get_onboarding_recommendations(request: OnboardingRequest):
         n=10
     )
     return {"recommendations": recommendations}
+
+class FeedbackRequest(BaseModel):
+    user_id: str
+    book_id: str
+    vote: int
+
+@app.post("/feedback")
+def record_feedback(request: FeedbackRequest):
+    result = supabase.table("feedback").upsert({
+        "user_id": request.user_id,
+        "book_id": request.book_id,
+        "vote": request.vote,
+    }, on_conflict="user_id,book_id").execute()
+    return {"success": True}
+
+class ReadingStatusRequest(BaseModel):
+    user_id: str
+    book_id: str
+    status: str
+
+@app.post("/reading-status")
+def update_reading_status(request: ReadingStatusRequest):
+    result = supabase.table("reading_status").upsert({
+        "user_id": request.user_id,
+        "book_id": request.book_id,
+        "status": request.status,
+    }, on_conflict="user_id,book_id").execute()
+    return {"success": True}
+
+class DeleteStatusRequest(BaseModel):
+    user_id: str
+    book_id: str
+
+@app.delete("/reading-status")
+def delete_reading_status(request: DeleteStatusRequest):
+    supabase.table("reading_status").delete().eq("user_id", request.user_id).eq("book_id", request.book_id).execute()
+    return {"success": True}
