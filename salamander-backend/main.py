@@ -71,3 +71,18 @@ class DeleteStatusRequest(BaseModel):
 def delete_reading_status(request: DeleteStatusRequest):
     supabase.table("reading_status").delete().eq("user_id", request.user_id).eq("book_id", request.book_id).execute()
     return {"success": True}
+
+@app.get("/user-onboarding-status/{user_id}")
+def check_onboarding_status(user_id: str):
+    result = supabase.table("profiles").select("onboarding_completed").eq("id", user_id).execute()
+    if not result.data:
+        return {"onboarding_completed": False}
+    return {"onboarding_completed": result.data[0].get("onboarding_completed", False)}
+
+class CompleteOnboardingRequest(BaseModel):
+    user_id: str
+
+@app.post("/complete-onboarding")
+def mark_onboarding_complete(request: CompleteOnboardingRequest):
+    supabase.table("profiles").update({"onboarding_completed": True}).eq("id", request.user_id).execute()
+    return {"success": True}

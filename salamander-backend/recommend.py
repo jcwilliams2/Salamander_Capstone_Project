@@ -58,7 +58,7 @@ def query_similar_books(query_vector, exclude_ids=None, limit=10):
     }).execute()
     return result.data
 
-def explain_recommendation(book, user_books=None, selected_genres=None):
+def explain_recommendation(book, user_books=None, selected_genres=None, genre_centroids=None):
     if user_books:
         similarities = []
         for b in user_books:
@@ -75,7 +75,22 @@ def explain_recommendation(book, user_books=None, selected_genres=None):
             closest = max(similarities, key=lambda x: x[1])
             return f"Recommended because of similarity to '{closest[0]['title']}'"
 
-    if selected_genres:
+    if selected_genres and genre_centroids:
+        book_emb = book.get('embedding')
+        if isinstance(book_emb, str):
+            book_emb = json.loads(book_emb)
+        if book_emb is not None:
+            best_genre, best_sim = None, -1
+            for g in selected_genres:
+                centroid = genre_centroids.get(g)
+                if centroid is None:
+                    continue
+                sim = np.dot(book_emb, centroid) / (np.linalg.norm(book_emb) * np.linalg.norm(centroid))
+                if sim > best_sim:
+                    best_sim = sim
+                    best_genre = g
+            if best_genre:
+                return f"Recommended based on your interest in {best_genre}"
         return f"Recommended based on your interest in {selected_genres[0]}"
 
     return "Recommended based on popularity"
@@ -108,7 +123,7 @@ def zero_history_recommend(selected_genres=None, seed_books=None, genre_centroid
         genre_vector = np.array(vectors, dtype=float).mean(axis=0).tolist()
         recs = query_similar_books(genre_vector, limit=n)
         for book in recs:
-            book['explanation'] = explain_recommendation(book, selected_genres=selected_genres)
+            book['explanation'] = explain_recommendation(book, selected_genres=selected_genres, genre_centroids=genre_centroids)
             book.pop('embedding', None)
         return recs
     else:
