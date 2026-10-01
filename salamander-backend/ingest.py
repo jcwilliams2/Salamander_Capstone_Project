@@ -134,6 +134,7 @@ def fetch_isbndb_metadata(isbn):
         "isbn": isbn,
         "description": book.get("synopsis") or book.get("excerpt"),
         "genre_tags": book.get("subjects"),
+        "cover_url": book.get("image"),
     }
 
 def fetch_google_books_metadata(isbn):
@@ -166,6 +167,7 @@ def fetch_google_books_metadata(isbn):
         "isbn": isbn,
         "description": volume_info.get("description"),
         "genre_tags": volume_info.get("categories"),
+        "cover_url": volume_info.get("imageLinks", {}).get("thumbnail"),
     }
 
 def safe_get_json(url, retries=3):
@@ -223,12 +225,16 @@ def fetch_open_library_metadata(isbn):
         if name:
             author_names.append(name)
 
+    cover_ids = edition.get("covers")
+    cover_url = f"https://covers.openlibrary.org/b/id/{cover_ids[0]}-M.jpg" if cover_ids else None
+
     return {
         "title": edition.get("title"),
         "author": ", ".join(author_names) if author_names else None,
         "isbn": isbn,
         "description": description,
         "genre_tags": genre_tags,
+        "cover_url": cover_url
     }
 
 def get_book_metadata(isbn):
@@ -262,7 +268,7 @@ def get_book_metadata(isbn):
         "google_books": fetch_google_books_metadata,
     }
     for name, fetcher in alt_fetchers.items():
-        if raw_subjects and author:
+        if raw_subjects and author and primary.get("cover_url"):
             break
         if name in source_tier:
             continue
@@ -275,6 +281,9 @@ def get_book_metadata(isbn):
         if not author and alt.get("author"):
             author = alt.get("author")
             print(f" Backfilled author for {isbn} from {name}")
+        if not primary.get("cover_url") and alt.get("cover_url"):
+            primary["cover_url"] = alt.get("cover_url")
+            print(f" Backfilled cover_url for {isbn} from {name}")
 
     primary["source_tier"] = source_tier
     primary["author"] = author
@@ -283,7 +292,7 @@ def get_book_metadata(isbn):
 
     cleaned_description = clean_description(primary.get("description"))
     primary["description"] = cleaned_description
-    primary["is_english"] = is_english(cleaned_description) if clean_description else None
+    primary["is_english"] = is_english(cleaned_description) if cleaned_description else None
 
     embedding_text = build_embedding_text(primary.get("title"), cleaned_description)
     primary["embedding"] = generate_embedding(embedding_text)
