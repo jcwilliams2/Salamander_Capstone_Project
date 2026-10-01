@@ -10,7 +10,7 @@ import './App.css'
 function App() {
   const [session, setSession] = useState(null)
   const [showSignup, setShowSignup] = useState(true)
-  const [onboardingComplete, setOnbardingComplete] = useState(false)
+  const [onboardingComplete, setOnboardingComplete] = useState(false)
   const [recommendations, setRecommendations] = useState([])
 
   useEffect(() => {
@@ -23,9 +23,20 @@ function App() {
     return () => listener.subscription.unsubscribe()
   }, [])
 
+  useEffect(() => {
+    if (!session) return
+
+    fetch(`http://localhost:8000/user-onboarding-status/${session.user.id}`)
+      .then((res) => res.json())
+      .then((data) => {
+        setOnboardingComplete(data.onboarding_completed)
+      })
+      .catch((err) => console.error('Failed to check onboarding status', err))
+  }, [session])
+
   function handleOnboardingComplete(recs) {
     setRecommendations(recs)
-    setOnbardingComplete(true)
+    setOnboardingComplete(true)
   }
 
   if (!session) {
@@ -37,7 +48,7 @@ function App() {
   }
 
   if (!onboardingComplete) {
-    return <Onboarding onComplete={handleOnboardingComplete} />
+    return <Onboarding userId={session.user.id} onComplete={handleOnboardingComplete} />
   }
 
   return (

@@ -9,7 +9,7 @@ const GENRE_OPTIONS = [
   'psychology', 'politics', 'sports', 'nonfiction'
 ]
 
-function Onboarding({ onComplete }) {
+function Onboarding({ userId, onComplete }) {
     const [selectedGenres, setSelectedGenres] = useState([])
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
@@ -36,8 +36,16 @@ function Onboarding({ onComplete }) {
             }
 
             const data = await response.json()
+
+            await fetch('http://localhost:8000/complete-onboarding', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId }),
+            })
+
             onComplete(data.recommendations)
         } catch (err) {
+            console.error('Onboarding request failed:', err)
             setError('Something went wrong. Please try again.')
         } finally {
             setLoading(false)
@@ -56,8 +64,16 @@ function Onboarding({ onComplete }) {
             })
 
             const data = await response.json()
+
+            await fetch('http://localhost:8000/complete-onboarding', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId }),
+            })
+
             onComplete(data.recommendations)
         } catch (err) {
+            console.error('Onboarding request failed:', err)
             setError('Something went wrong. Please try again.')
         } finally {
             setLoading(false)
