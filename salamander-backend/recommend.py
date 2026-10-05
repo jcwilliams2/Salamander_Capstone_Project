@@ -1,6 +1,9 @@
 import numpy as np
 import json
+from datetime import date, datetime
 from supabase_client import supabase
+
+_nyt_cache = {"data": None, "next_publish_date": None}
 
 GENRE_ADJACENCY = {
     "fantasy": {"science fiction", "historical fiction", "young adult", "mystery", "horror", "graphic novel"},
@@ -34,6 +37,40 @@ GENRE_ADJACENCY = {
     "nonfiction": set(),
     "fiction": set(),
 }
+
+def get_current_bestsellers_with_covers(list_name="combined-print-and-e-book-fiction"):
+    today = date.today()
+
+    if _nyt_cache["data"] and _nyt_cache["next_publish_date"] and today < _nyt_cache["next_publish_date"]:
+        return _nyt_cache["data"]
+
+    resp = requests.get(
+        f"http://api.nytimes.com/svc/books/v3/lists/current/{list_name}.json",
+        params={"api-key": os.environ["NYT_API_KEY"]},
+    )
+    if resp.status_code != 200:
+        print(f" NYT fetch failed: {resp.status_code}")
+        return _nyt_cache["data"] or []
+
+    payload = resp.json().get("results", {})
+    books = payload.get("books", [])
+    results = [{
+        "title": b.get("title"),
+        "author": b.get("author"),
+        "isbn": b.get("primary_isbn13"),
+        "cover_url": b.get("book_image"),
+        "explanation": "Current New York Times bestseller",
+    } for b in books]
+
+    next_date_str = payload.get("next_published_date")
+    try:
+        next_date = datetime.strptime(next_date_str, "%Y-%m-%d").date() if next_date_str else None
+    except ValueError:
+        next_date = None
+
+    _nyt_cache["data"] = results
+    _nyt_cache["next_publish_date"] = next_date
+    return results
 
 def get_adjacent_genres(user_genre_tags):
     adjacent = set()
@@ -259,35 +296,54 @@ def evaluate_popularity_baseline(user_profiles, k=1, n=10):
     return hits / total if total else None
 
 if __name__=="__main__":
-#    def fetch(isbns):
-#        return supabase.table("books").select("id, title, embedding").in_("isbn", isbns).execute().data
-#    
-#    fantasy_profile = fetch([
-#        "9780547928227", "9780756404741", "9780316556347", "9780441478125",
-#        "9780441172719", "9780547773742", "9780553293357"
-#    ])
-#    mystery_profile = fetch([
-#        "9780394758282", "9780307588371", "9781250301697", "9780307949486",
-#        "9780062073563"
-#    ])
-#    memoir_profile = fetch([
-#        "9780399590504", "9781451648539", "9780345350688", "9780807014295"
-#    ])
-#    selfhelp_profile = fetch([
-#        "9780735211292", "9781982137274", "9780374533557", "9780804139298"
-#    ])
+    def fetch(isbns):
+        return supabase.table("books").select("id, title, author, embedding, genre_tags").in_("isbn", isbns).execute().data
 
-#    profiles = [fantasy_profile, mystery_profile, memoir_profile, selfhelp_profile]
+    #Evaluation of T18
+    narrow = fetch(["9780547928227", "9780756404741", "9780316556347", "9780441478125"]) # fantasy & science-fiction
+    broad = fetch(["9780547928227", "9780399590504", "9781476753836", "9780679745587"]) # diverse genres
+    n_score, b_score = diversity_score(narrow), diversity_score(broad)
+    print("\nT18")
+    print(f"Narrow reader: {n_score:.4f}")
+    print(f"Broad reader: {b_score:.4f}")
+    print(f"Narrow < broad? {n_score < b_score}")
 
-#    recommender_hit_rate = evaluate_recommender(profiles, k=1)
-#    baseline_hit_rate = evaluate_popularity_baseline(profiles, k=1)
+    #Evaluation of T19
+    print("\nT19")
+    all_books = supabase.table("books").select("id, title, author, embedding, genre_tags").execute().data
+    gaps = find_diversity_gaps(narrow, all_books, n=5)
+    print(f"Gap suggestions for narrow reader (fantasy & science fiction)")
+    for book in gaps:
+        print(f"    {book['title']} by {book.get('author', 'Unknown')} (distance {book['distance']:.4f})")
 
-#    print(f"Content-based recommender hit rate: {recommender_hit_rate:.4f}")
-#    print(f"Popularity baseline hit rate: {baseline_hit_rate:.4f}")
-#    print(f"\nDoes recommender outperform baseline? {recommender_hit_rate > baseline_hit_rate}")
+# Evaluation of T20    
+    fantasy_profile = fetch([
+        "9780547928227", "9780756404741", "9780316556347", "9780441478125",
+        "9780441172719", "9780547773742", "9780553293357"
+    ])
+    mystery_profile = fetch([
+        "9780394758282", "9780307588371", "9781250301697", "9780307949486",
+        "9780062073563"
+    ])
+    memoir_profile = fetch([
+        "9780399590504", "9781451648539", "9780345350688", "9780807014295"
+    ])
+    selfhelp_profile = fetch([
+        "9780735211292", "9781982137274", "9780374533557", "9780804139298"
+    ])
 
-    hobbit = supabase.table("books").select("id, embedding").eq("isbn", "9780547928227").execute()
-    similar = query_similar_books(hobbit.data[0]["embedding"], exclude_ids=[hobbit.data[0]["id"]])
-    print("--- Hobbit similarity check (larger catalog) ---")
-    for book in similar:
-        print(f" {book["title"]} by {book["author"]} — similarity: {book["similarity"]:.3f}")
+    profiles = [fantasy_profile, mystery_profile, memoir_profile, selfhelp_profile]
+
+    recommender_hit_rate = evaluate_recommender(profiles, k=1)
+    baseline_hit_rate = evaluate_popularity_baseline(profiles, k=1)
+
+    print("\nT20")
+    print(f"Content-based recommender hit rate: {recommender_hit_rate:.4f}")
+    print(f"Popularity baseline hit rate: {baseline_hit_rate:.4f}")
+    print(f"\nDoes recommender outperform baseline? {recommender_hit_rate > baseline_hit_rate}")
+
+#    hobbit = supabase.table("books").select("id, embedding").eq("isbn", "9780547928227").execute()
+#    similar = query_similar_books(hobbit.data[0]["embedding"], exclude_ids=[hobbit.data[0]["id"]])
+#    print("--- Hobbit similarity check (larger catalog) ---")
+#    for book in similar:
+#        print(f" {book["title"]} by {book["author"]} — similarity: {book["similarity"]:.3f}")
