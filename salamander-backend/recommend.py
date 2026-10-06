@@ -353,36 +353,60 @@ def get_user_books_with_feedback(user_id):
         book["status"] = status_by_book_id.get(book["id"], "reading")
     return books, feedback_by_book_id
 
+def _to_vector(emb):
+    if isinstance(emb, str):
+        emb = json.loads(emb)
+    return np.array(emb, dtype=float)
+
+def get_rejected_books(user_id):
+    dnf_rows = supabase.table("reading_status").select("book_id").eq("user_id", user_id).eq("status", "dnf").execute().data
+    down_rows = supabase.table("feedback").select("book_id").eq("user_id", user_id).eq("vote", -1).execute().data
+    ids = list({r["book_id"] for r in dnf_rows} | {r["book_id"] for r in down_rows})
+    if not ids:
+        return []
+    return supabase.table("books").select("id, title, embedding").in_("id", ids).execute().data
+
+def filter_similar_to_rejected(candidates, rejected_books, threshold=0.40):
+    if not rejected_books:
+        return candidates
+    rejected_vecs = [_to_vector(b["embedding"]) for b in rejected_books]
+    rejected_ids = {b["id"] for b in rejected_books}
+    kept = []
+    for book in candidates:
+        if book["id"] in rejected_ids:
+            continue
+        vec = _to_vector(book["embedding"])
+        if any(1 - cosine_distance(vec, rv) >= threshold for rv in rejected_vecs):
+            continue
+        kept.append(book)
+    return kept
+
 if __name__=="__main__":
-    # Evaluation of T26
-    print(f"\nT26: degenerate-vote")
+    print("T27")
     failures = 0
 
-    def make_profile(spec):
-        books, feedback = [], {}
-        for i, (status, vote) in enumerate(spec):
-            books.append({"id": f"b{i}", "status": status})
-            feedback[f"b{i}"] = vote
-        return books, feedback
+    rejected = supabase.table("books").select("id, title, embedding").eq("isbn", "9780547928227").execute().data
+    candidates = query_similar_books(_to_vector(rejected[0]["embedding"]).tolist(), limit=20)
 
-    cases = [
-        ("all DNF + downvote",              [("dnf", -1)] * 5,                                                  True),
-        ("all finished + downvote",         [("finished", -1)] * 4,                                             True),
-        ("downvotes across mixed status",   [("finished", -1), ("reading", -1), ("dnf", -1)],                   True),
-        ("healthy mixed profile",           [("finished", 1), ("finished", 0), ("dnf", -1), ("reading", 0)],    False),
-        ("only 2 books",                    [("dnf", -1), ("dnf", -1)],                                         False),
-    ]
-    for label, spec, expect_degenerate in cases:
-        books, feedback = make_profile(spec)
-        raw = compute_weights(books, feedback)
-        final = compute_final_weights(books, feedback)
-        detected = is_degenerate_weighting(raw)
-        sane = len(final) == len(books) and all(np.isfinite(v) and v > 0 for v in final.values())
-        fallback_applied = final != raw
-        ok = detected == expect_degenerate and sane and fallback_applied == expect_degenerate
-        print(f" {label:30} degenerate={detected!s:5} (expected {expect_degenerate!s:5}) sane={sane} {'OK' if ok else 'FAIL'}")
+    kept = filter_similar_to_rejected(candidates, rejected)
+    kept_ids = {b["id"] for b in kept}
+    print(f" {len(candidates)} candidates -> {len(kept)} kept, {len(candidates) - len(kept)} removed")
+
+    for b in candidates:
+        was_removed = b["id"] not in kept_ids
+        should_remove = b["id"] not in kept_ids
+        should_remove = b["similarity"] >= 0.40
+        ok = was_removed == should_remove
+        if was_removed:
+            print(f" removed: {b["title"]} (similarity {b["similarity"]:.3f}) {'OK' if ok else 'FAIL'}")
         failures += 0 if ok else 1
 
-    books, feedback = make_profile([("finished", 1), ("reading", 1), ("dnf", 1)])
-    print(f" (info) all upvotes, mixed status: degenerate={is_degenerate_weighting(compute_weights(books, feedback))}")
+    nontrivial = 0 < len(kept) < len(candidates)
+    print(f" test results in some kept and some removed: {nontrivial}")
+    failures += 0 if nontrivial else 1
+
+    unchanged = filter_similar_to_rejected(candidates, []) == candidates
+    print(f" no rejected books -> candidates unchanged: {unchanged}")
+    failures += 0 if unchanged else 1
+
     print(f"\n{'PASS' if failures == 0 else 'FAIL'}: {failures} mismatches")
