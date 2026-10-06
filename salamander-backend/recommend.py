@@ -326,6 +326,18 @@ def compute_weights(user_books, feedback_by_book_id):
         weights[book["id"]] = get_book_weight(status, vote)
     return weights
 
+def is_degenerate_weighting(weights, min_books=3, threshold=0.15):
+    return len(weights) >= min_books and float(np.std(list(weights.values()))) < threshold
+
+def compute_final_weights(user_books, feedback_by_book_id):
+    weights = compute_weights(user_books, feedback_by_book_id)
+    if is_degenerate_weighting(weights):
+        return {
+            book["id"]: (1.2 if book.get("status") == "finished" else 0.5)
+            for book in user_books
+        }
+    return weights
+
 def get_user_books_with_feedback(user_id):
     status_rows = supabase.table("reading_status").select("book_id, status").eq("user_id", user_id).execute().data
     feedback_rows = supabase.table("feedback").select("book_id, vote").eq("user_id", user_id).execute().data
@@ -342,32 +354,35 @@ def get_user_books_with_feedback(user_id):
     return books, feedback_by_book_id
 
 if __name__=="__main__":
-    # Evaluation of T23
-    expected = {
-        ("finished", 1): 1.6, ("finished", 0): 1.0, ("finished", -1): 0.4,
-        ("reading", 1): 0.96, ("reading", 0): 0.6, ("reading", -1): 0.24,
-        ("dnf", 1): 0.48, ("dnf", 0): 0.3, ("dnf", -1): 0.12,
-        ("want_to_read", 1): 0.4, ("want_to_read", 0): 0.4, ("want_to_read", -1): 0.4,
-    }
-
-    print("T23: status x vote weight table")
+    # Evaluation of T26
+    print(f"\nT26: degenerate-vote")
     failures = 0
-    for (status, vote), exp in expected.items():
-        actual = get_book_weight(status, vote)
-        ok = abs(actual - exp) < 1e-9
-        print(f" {status:13} vote {vote:+d} -> {actual:.2f} (expected {exp:.2f}) {'OK' if ok else 'FAIL'}")
+
+    def make_profile(spec):
+        books, feedback = [], {}
+        for i, (status, vote) in enumerate(spec):
+            books.append({"id": f"b{i}", "status": status})
+            feedback[f"b{i}"] = vote
+        return books, feedback
+
+    cases = [
+        ("all DNF + downvote",              [("dnf", -1)] * 5,                                                  True),
+        ("all finished + downvote",         [("finished", -1)] * 4,                                             True),
+        ("downvotes across mixed status",   [("finished", -1), ("reading", -1), ("dnf", -1)],                   True),
+        ("healthy mixed profile",           [("finished", 1), ("finished", 0), ("dnf", -1), ("reading", 0)],    False),
+        ("only 2 books",                    [("dnf", -1), ("dnf", -1)],                                         False),
+    ]
+    for label, spec, expect_degenerate in cases:
+        books, feedback = make_profile(spec)
+        raw = compute_weights(books, feedback)
+        final = compute_final_weights(books, feedback)
+        detected = is_degenerate_weighting(raw)
+        sane = len(final) == len(books) and all(np.isfinite(v) and v > 0 for v in final.values())
+        fallback_applied = final != raw
+        ok = detected == expect_degenerate and sane and fallback_applied == expect_degenerate
+        print(f" {label:30} degenerate={detected!s:5} (expected {expect_degenerate!s:5}) sane={sane} {'OK' if ok else 'FAIL'}")
         failures += 0 if ok else 1
 
-    print("\nT23: compute_weights on a small profile")
-    books = [
-        {"id": "a", "status": "finished"},
-        {"id": "b", "status": "dnf"},
-        {"id": "c", "status": "want_to_read"},
-    ]
-    weights = compute_weights(books, {"a": 1, "b": -1, "c": 1})
-    for book_id, exp in {"a": 1.6, "b": 0.12, "c": 0.4}.items():
-        ok = abs(weights[book_id] - exp) < 1e-9
-        print(f" book {book_id}: {weights[book_id]:.2f} (expected {exp:.2f}) {'OK' if ok else 'FAIL'}")
-        failures += 0 if ok else 1
-    
+    books, feedback = make_profile([("finished", 1), ("reading", 1), ("dnf", 1)])
+    print(f" (info) all upvotes, mixed status: degenerate={is_degenerate_weighting(compute_weights(books, feedback))}")
     print(f"\n{'PASS' if failures == 0 else 'FAIL'}: {failures} mismatches")
