@@ -1,7 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from recommend import zero_history_recommend, build_genre_centroids
+from recommend import zero_history_recommend, build_genre_centroids, get_current_bestsellers_with_covers
 from supabase_client import supabase
 
 app = FastAPI()
@@ -34,6 +34,10 @@ def get_onboarding_recommendations(request: OnboardingRequest):
         n=10
     )
     return {"recommendations": recommendations}
+
+@app.get("/recommendations/returning-no-history")
+def get_returning_user_feed():
+    return {"recommendations": get_current_bestsellers_with_covers()}
 
 class FeedbackRequest(BaseModel):
     user_id: str
@@ -84,5 +88,7 @@ class CompleteOnboardingRequest(BaseModel):
 
 @app.post("/complete-onboarding")
 def mark_onboarding_complete(request: CompleteOnboardingRequest):
-    supabase.table("profiles").update({"onboarding_completed": True}).eq("id", request.user_id).execute()
+    result = supabase.table("profiles").update({"onboarding_completed": True}).eq("id", request.user_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="No profile found for this user")
     return {"success": True}

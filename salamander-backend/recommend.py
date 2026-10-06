@@ -1,5 +1,7 @@
 import numpy as np
 import json
+import os
+import requests
 from datetime import date, datetime
 from supabase_client import supabase
 
@@ -45,7 +47,7 @@ def get_current_bestsellers_with_covers(list_name="combined-print-and-e-book-fic
         return _nyt_cache["data"]
 
     resp = requests.get(
-        f"http://api.nytimes.com/svc/books/v3/lists/current/{list_name}.json",
+        f"https://api.nytimes.com/svc/books/v3/lists/current/{list_name}.json",
         params={"api-key": os.environ["NYT_API_KEY"]},
     )
     if resp.status_code != 200:
@@ -156,7 +158,7 @@ def zero_history_recommend(selected_genres=None, seed_books=None, genre_centroid
     elif selected_genres and genre_centroids:
         vectors = [genre_centroids[g] for g in selected_genres if g in genre_centroids]
         if not vectors:
-            return popularity_baseline_recommend(n)
+            return no_preference_fallback(n)
         genre_vector = np.array(vectors, dtype=float).mean(axis=0).tolist()
         recs = query_similar_books(genre_vector, limit=n)
         for book in recs:
@@ -164,11 +166,17 @@ def zero_history_recommend(selected_genres=None, seed_books=None, genre_centroid
             book.pop('embedding', None)
         return recs
     else:
-        return popularity_baseline_recommend(n)
+        return no_preference_fallback(n)
 
 def popularity_baseline_recommend(n=10):
     result = supabase.table("books").select("id, title, author").order("created_at").limit(n).execute()
     return result.data
+
+def no_preference_fallback(n=10):
+    bestsellers = get_current_bestsellers_with_covers()
+    if bestsellers:
+        return bestsellers[:n]
+    return popularity_baseline_recommend(n)
 
 def build_genre_centroids():
     all_books = supabase.table("books").select("genre_tags, embedding").execute().data
