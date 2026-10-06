@@ -40,6 +40,15 @@ GENRE_ADJACENCY = {
     "fiction": set(),
 }
 
+STATUS_BASE_WEIGHT = {
+    "finished": 1.0,
+    "reading": 0.6,
+    "dnf": 0.3,
+    "want_to_read": 0.4,
+}
+
+VOTE_MULTIPLIER = {1: 1.6, 0: 1.0, -1: 0.4}
+
 def get_current_bestsellers_with_covers(list_name="combined-print-and-e-book-fiction"):
     today = date.today()
 
@@ -303,55 +312,62 @@ def evaluate_popularity_baseline(user_profiles, k=1, n=10):
         total += len(held_out_ids)
     return hits / total if total else None
 
+def get_book_weight(status, vote):
+    base = STATUS_BASE_WEIGHT.get(status, 0.5)
+    if status == "want_to_read":
+        return base
+    return base * VOTE_MULTIPLIER.get(vote, 1.0)
+
+def compute_weights(user_books, feedback_by_book_id):
+    weights = {}
+    for book in user_books:
+        vote = feedback_by_book_id.get(book["id"], 0)
+        status = book.get("status", "reading")
+        weights[book["id"]] = get_book_weight(status, vote)
+    return weights
+
+def get_user_books_with_feedback(user_id):
+    status_rows = supabase.table("reading_status").select("book_id, status").eq("user_id", user_id).execute().data
+    feedback_rows = supabase.table("feedback").select("book_id, vote").eq("user_id", user_id).execute().data
+
+    feedback_by_book_id = {row["book_id"]: row["vote"] for row in feedback_rows}
+    book_ids = [row["book_id"] for row in status_rows]
+    if not book_ids:
+        return [], {}
+
+    books = supabase.table("books").select("id, title, embedding, genre_tags").in_("id", book_ids).execute().data
+    status_by_book_id = {row["book_id"]: row["status"] for row in status_rows}
+    for book in books:
+        book["status"] = status_by_book_id.get(book["id"], "reading")
+    return books, feedback_by_book_id
+
 if __name__=="__main__":
-    def fetch(isbns):
-        return supabase.table("books").select("id, title, author, embedding, genre_tags").in_("isbn", isbns).execute().data
+    # Evaluation of T23
+    expected = {
+        ("finished", 1): 1.6, ("finished", 0): 1.0, ("finished", -1): 0.4,
+        ("reading", 1): 0.96, ("reading", 0): 0.6, ("reading", -1): 0.24,
+        ("dnf", 1): 0.48, ("dnf", 0): 0.3, ("dnf", -1): 0.12,
+        ("want_to_read", 1): 0.4, ("want_to_read", 0): 0.4, ("want_to_read", -1): 0.4,
+    }
 
-    #Evaluation of T18
-    narrow = fetch(["9780547928227", "9780756404741", "9780316556347", "9780441478125"]) # fantasy & science-fiction
-    broad = fetch(["9780547928227", "9780399590504", "9781476753836", "9780679745587"]) # diverse genres
-    n_score, b_score = diversity_score(narrow), diversity_score(broad)
-    print("\nT18")
-    print(f"Narrow reader: {n_score:.4f}")
-    print(f"Broad reader: {b_score:.4f}")
-    print(f"Narrow < broad? {n_score < b_score}")
+    print("T23: status x vote weight table")
+    failures = 0
+    for (status, vote), exp in expected.items():
+        actual = get_book_weight(status, vote)
+        ok = abs(actual - exp) < 1e-9
+        print(f" {status:13} vote {vote:+d} -> {actual:.2f} (expected {exp:.2f}) {'OK' if ok else 'FAIL'}")
+        failures += 0 if ok else 1
 
-    #Evaluation of T19
-    print("\nT19")
-    all_books = supabase.table("books").select("id, title, author, embedding, genre_tags").execute().data
-    gaps = find_diversity_gaps(narrow, all_books, n=5)
-    print(f"Gap suggestions for narrow reader (fantasy & science fiction)")
-    for book in gaps:
-        print(f"    {book['title']} by {book.get('author', 'Unknown')} (distance {book['distance']:.4f})")
-
-# Evaluation of T20    
-    fantasy_profile = fetch([
-        "9780547928227", "9780756404741", "9780316556347", "9780441478125",
-        "9780441172719", "9780547773742", "9780553293357"
-    ])
-    mystery_profile = fetch([
-        "9780394758282", "9780307588371", "9781250301697", "9780307949486",
-        "9780062073563"
-    ])
-    memoir_profile = fetch([
-        "9780399590504", "9781451648539", "9780345350688", "9780807014295"
-    ])
-    selfhelp_profile = fetch([
-        "9780735211292", "9781982137274", "9780374533557", "9780804139298"
-    ])
-
-    profiles = [fantasy_profile, mystery_profile, memoir_profile, selfhelp_profile]
-
-    recommender_hit_rate = evaluate_recommender(profiles, k=1)
-    baseline_hit_rate = evaluate_popularity_baseline(profiles, k=1)
-
-    print("\nT20")
-    print(f"Content-based recommender hit rate: {recommender_hit_rate:.4f}")
-    print(f"Popularity baseline hit rate: {baseline_hit_rate:.4f}")
-    print(f"\nDoes recommender outperform baseline? {recommender_hit_rate > baseline_hit_rate}")
-
-#    hobbit = supabase.table("books").select("id, embedding").eq("isbn", "9780547928227").execute()
-#    similar = query_similar_books(hobbit.data[0]["embedding"], exclude_ids=[hobbit.data[0]["id"]])
-#    print("--- Hobbit similarity check (larger catalog) ---")
-#    for book in similar:
-#        print(f" {book["title"]} by {book["author"]} — similarity: {book["similarity"]:.3f}")
+    print("\nT23: compute_weights on a small profile")
+    books = [
+        {"id": "a", "status": "finished"},
+        {"id": "b", "status": "dnf"},
+        {"id": "c", "status": "want_to_read"},
+    ]
+    weights = compute_weights(books, {"a": 1, "b": -1, "c": 1})
+    for book_id, exp in {"a": 1.6, "b": 0.12, "c": 0.4}.items():
+        ok = abs(weights[book_id] - exp) < 1e-9
+        print(f" book {book_id}: {weights[book_id]:.2f} (expected {exp:.2f}) {'OK' if ok else 'FAIL'}")
+        failures += 0 if ok else 1
+    
+    print(f"\n{'PASS' if failures == 0 else 'FAIL'}: {failures} mismatches")
