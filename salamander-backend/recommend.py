@@ -49,6 +49,8 @@ STATUS_BASE_WEIGHT = {
 
 VOTE_MULTIPLIER = {1: 1.6, 0: 1.0, -1: 0.4}
 
+DIVERSITY_STATUSES = {"finished", "dnf"}
+
 def get_current_bestsellers_with_covers(list_name="combined-print-and-e-book-fiction"):
     today = date.today()
 
@@ -381,32 +383,70 @@ def filter_similar_to_rejected(candidates, rejected_books, threshold=0.40):
         kept.append(book)
     return kept
 
+def user_diversity_centroid_from_books(user_books):
+    eligible = [b for b in user_books if b.get("status") in DIVERSITY_STATUSES]
+    if not eligible:
+        return None
+    return diversity_centroid(eligible)
+
+def get_user_diversity_centroid(user_id):
+    user_books, _ = get_user_books_with_feedback(user_id)
+    return user_diversity_centroid_from_books(user_books)
+
 if __name__=="__main__":
-    print("T27")
-    failures = 0
+    print("T25")
+    results = []
 
-    rejected = supabase.table("books").select("id, title, embedding").eq("isbn", "9780547928227").execute().data
-    candidates = query_similar_books(_to_vector(rejected[0]["embedding"]).tolist(), limit=20)
+    def check(label, ok):
+        print(f" {label}: {'OK' if ok else 'FAIL'}")
+        results.append(ok)
 
-    kept = filter_similar_to_rejected(candidates, rejected)
-    kept_ids = {b["id"] for b in kept}
-    print(f" {len(candidates)} candidates -> {len(kept)} kept, {len(candidates) - len(kept)} removed")
+    def get(isbn):
+        return supabase.table("books").select("id, title, embedding, genre_tags").eq("isbn", isbn).execute().data[0]
 
-    for b in candidates:
-        was_removed = b["id"] not in kept_ids
-        should_remove = b["id"] not in kept_ids
-        should_remove = b["similarity"] >= 0.40
-        ok = was_removed == should_remove
-        if was_removed:
-            print(f" removed: {b["title"]} (similarity {b["similarity"]:.3f}) {'OK' if ok else 'FAIL'}")
-        failures += 0 if ok else 1
+    def mean_of(books):
+        return np.mean([_to_vector(b["embedding"]) for b in books], axis=0)
 
-    nontrivial = 0 < len(kept) < len(candidates)
-    print(f" test results in some kept and some removed: {nontrivial}")
-    failures += 0 if nontrivial else 1
+    def weighted_centroid(books, weights):
+        vecs = np.array([_to_vector(b["embedding"]) for b in books])
+        w = np.array([weights[b["id"]] for b in books])
+        return np.average(vecs, axis=0, weights=w)
 
-    unchanged = filter_similar_to_rejected(candidates, []) == candidates
-    print(f" no rejected books -> candidates unchanged: {unchanged}")
-    failures += 0 if unchanged else 1
+    hobbit, notw, circe = get("9780547928227"), get("9780756404741"), get("9780316556347")
+    educated, saltfat, coldblood = get("9780399590504"), get("9781476753836"), get("9780679745587")
 
+    profile = [
+        {**hobbit, "status": "finished"},
+        {**notw, "status": "finished"},
+        {**circe, "status": "dnf"},
+        {**educated, "status": "want_to_read"},
+        {**saltfat, "status": "reading"},
+    ]
+    dc = user_diversity_centroid_from_books(profile)
+
+    check("excludes not calculated statuses (want_to_read & reading)",
+        np.allclose(dc, mean_of([hobbit, notw, circe])))
+
+    eligible = [b for b in profile if b["status"] in DIVERSITY_STATUSES]
+    votes_a = {hobbit["id"]: 1, notw["id"]: -1, circe["id"]: 0}
+    votes_b = {hobbit["id"]: -1, notw["id"]: 1, circe["id"]: 0}
+    wa = weighted_centroid(eligible, compute_weights(eligible, votes_a))
+    wb = weighted_centroid(eligible, compute_weights(eligible, votes_b))
+
+    check("votes move the weighted (recommendation) centroid", not np.allclose(wa, wb))
+    check("diversity centroid is not any vote-weighted centroid", not np.allclose(dc, wa) and not np.allclose(dc, wb))
+
+    plus_finished = profile + [{**coldblood, "status": "finished"}]
+    new_dc = user_diversity_centroid_from_books(plus_finished)
+    check("logging a new finished book changes it (to the 4-book mean)",
+        not np.allclose(dc, new_dc) and np.allclose(new_dc, mean_of([hobbit, notw, circe, coldblood])))
+
+    plus_wtr = profile + [{**coldblood, "status": "want_to_read"}]
+    check("adding a want_to_read book leaves it unchanged",
+        np.allclose(dc, user_diversity_centroid_from_books(plus_wtr)))
+
+    check("returns None when no finished/DNF books exist",
+        user_diversity_centroid_from_books([{**educated, "status": "want_to_read"}]) is None)
+
+    failures = results.count(False)
     print(f"\n{'PASS' if failures == 0 else 'FAIL'}: {failures} mismatches")
