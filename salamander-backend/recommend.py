@@ -2,7 +2,7 @@ import numpy as np
 import json
 import os
 import requests
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from supabase_client import supabase
 
 _nyt_cache = {"data": None, "next_publish_date": None}
@@ -393,60 +393,152 @@ def get_user_diversity_centroid(user_id):
     user_books, _ = get_user_books_with_feedback(user_id)
     return user_diversity_centroid_from_books(user_books)
 
+def compute_user_centroids(user_books, feedback):
+    rec_books = [b for b in user_books if b.get("status") != "want_to_read"]
+    rec = None
+    if rec_books:
+        weights = compute_final_weights(rec_books, feedback)
+        vecs = np.array([_to_vector(b["embedding"]) for b in rec_books])
+        w = np.array([weights[b["id"]] for b in rec_books])
+        rec = np.average(vecs, axis=0, weights=w)
+    div = user_diversity_centroid_from_books(user_books)
+    return rec, div
+
+def get_user_centroids(user_id):
+    rows = supabase.table("user_centroids").select("recommendation_centroid, diversity_centroid").eq("user_id", user_id).execute().data
+    if rows:
+        r, d = rows[0]["recommendation_centroid"], rows[0]["diversity_centroid"]
+        return (None if r is None else _to_vector(r)), (None if d is None else _to_vector(d)), True
+
+    user_books, feedback = get_user_books_with_feedback(user_id)
+    rec, div = compute_user_centroids(user_books, feedback)
+    supabase.table("user_centroids").upsert({
+        "user_id": user_id,
+        "recommendation_centroid": None if rec is None else rec.tolist(),
+        "diversity_centroid": None if div is None else div.tolist(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }, on_conflict="user_id").execute()
+    return rec, div, False
+
+def invalidate_user_centroids(user_id):
+    supabase.table("user_centroids").delete().eq("user_id", user_id).execute()
+
+def get_books_by_status(user_id, statuses):
+    rows = supabase.table("reading_status").select("book_id").eq("user_id", user_id).in_("status", list(statuses)).execute().data
+    if not rows:
+        return []
+    ids = [r["book_id"] for r in rows]
+    return supabase.table("books").select("id, title, embedding").in_("id", ids).execute().data
+
+def personalized_recommend(user_id, n=10):
+    rec, _div, _cached = get_user_centroids(user_id)
+    if rec is None:
+        return None
+    
+    logged = supabase.table("reading_status").select("book_id").eq("user_id", user_id).execute().data
+    exclude_ids = [r["book_id"] for r in logged]
+
+    candidates = query_similar_books(rec.tolist(), exclude_ids=exclude_ids, limit=(n *3))
+    candidates = filter_similar_to_rejected(candidates, get_rejected_books(user_id))[:n]
+
+    finished = get_books_by_status(user_id, {"finished"})
+    for book in candidates:
+        book["explanation"] = (
+            explain_recommendation(book, user_books=finished)
+            if finished else "Recommended based on your reading history"
+        )
+        book.pop("embedding", None)
+    return candidates
+
 if __name__=="__main__":
-    print("T25")
+    import uuid
+    print("T24")
     results = []
 
     def check(label, ok):
         print(f" {label}: {'OK' if ok else 'FAIL'}")
-        results.append(ok)
+        results.append(bool(ok))
 
     def get(isbn):
-        return supabase.table("books").select("id, title, embedding, genre_tags").eq("isbn", isbn).execute().data[0]
+        return supabase.table("books").select("id, title, embedding").eq("isbn", isbn).execute().data[0]
 
-    def mean_of(books):
-        return np.mean([_to_vector(b["embedding"]) for b in books], axis=0)
+    def same(a, b):
+        return a is not None and b is not None and np.allclose(a, b, atol=1e-6)
 
-    def weighted_centroid(books, weights):
-        vecs = np.array([_to_vector(b["embedding"]) for b in books])
-        w = np.array([weights[b["id"]] for b in books])
-        return np.average(vecs, axis=0, weights=w)
+    def vecs_of(books):
+        return np.array([_to_vector(b["embedding"]) for b in books])
 
     hobbit, notw, circe = get("9780547928227"), get("9780756404741"), get("9780316556347")
-    educated, saltfat, coldblood = get("9780399590504"), get("9781476753836"), get("9780679745587")
+    educated = get("9780399590504")
 
-    profile = [
-        {**hobbit, "status": "finished"},
-        {**notw, "status": "finished"},
-        {**circe, "status": "dnf"},
-        {**educated, "status": "want_to_read"},
-        {**saltfat, "status": "reading"},
-    ]
-    dc = user_diversity_centroid_from_books(profile)
+    tag = uuid.uuid4().hex[:8]
+    uid = supabase.auth.admin.create_user({
+        "email": f"t24-{tag}@example.com",
+        "password": f"Tmp-{tag}-pass1",
+        "email_confirm": True,
+        "user_metadata": {"username": f"t24_{tag}"},
+    }).user.id
 
-    check("excludes not calculated statuses (want_to_read & reading)",
-        np.allclose(dc, mean_of([hobbit, notw, circe])))
+    try:
+        def log_status(book, status):
+            supabase.table("reading_status").upsert({"user_id": uid, "book_id": book["id"], "status": status}, on_conflict="user_id,book_id").execute()
 
-    eligible = [b for b in profile if b["status"] in DIVERSITY_STATUSES]
-    votes_a = {hobbit["id"]: 1, notw["id"]: -1, circe["id"]: 0}
-    votes_b = {hobbit["id"]: -1, notw["id"]: 1, circe["id"]: 0}
-    wa = weighted_centroid(eligible, compute_weights(eligible, votes_a))
-    wb = weighted_centroid(eligible, compute_weights(eligible, votes_b))
+        def vote(book, v):
+            supabase.table("feedback").upsert({"user_id": uid, "book_id":book["id"], "vote": v}, on_conflict="user_id,book_id").execute()
 
-    check("votes move the weighted (recommendation) centroid", not np.allclose(wa, wb))
-    check("diversity centroid is not any vote-weighted centroid", not np.allclose(dc, wa) and not np.allclose(dc, wb))
+        def cached_rows():
+            return supabase.table("user_centroids").select("user_id").eq("user_id", uid).execute().data
 
-    plus_finished = profile + [{**coldblood, "status": "finished"}]
-    new_dc = user_diversity_centroid_from_books(plus_finished)
-    check("logging a new finished book changes it (to the 4-book mean)",
-        not np.allclose(dc, new_dc) and np.allclose(new_dc, mean_of([hobbit, notw, circe, coldblood])))
+        log_status(hobbit, "finished")
+        log_status(notw, "finished")
+        log_status(circe, 'dnf')
+        log_status(educated, "want_to_read")
+        vote(hobbit, 1)
 
-    plus_wtr = profile + [{**coldblood, "status": "want_to_read"}]
-    check("adding a want_to_read book leaves it unchanged",
-        np.allclose(dc, user_diversity_centroid_from_books(plus_wtr)))
+        rec1, div1, hit = get_user_centroids(uid)
+        check("first call computes (cache miss) and stores a row", not hit and len(cached_rows()) == 1)
 
-    check("returns None when no finished/DNF books exist",
-        user_diversity_centroid_from_books([{**educated, "status": "want_to_read"}]) is None)
+        rec2, div2, hit = get_user_centroids(uid)
+        check("second call is served from the cache and matches", hit and same(rec1, rec2) and same(div1, div2))
+
+        base = [{**hobbit, "status": "finished"}, {**notw, "status": "finished"}, {**circe, "status": "dnf"}]
+        v = vecs_of(base)
+        check("cached values match an independent calculation (want_to_read excluded)", 
+            same(rec1, np.average(v, axis=0, weights=[1.6, 1.0, 0.3])) and same(div1, v.mean(axis=0)))
+        
+        vote(notw, -1)
+        _r, _d, hit = get_user_centroids(uid)
+        check("cache is reused even after the vote changed (nothing invalidated yet)", hit)
+
+        invalidate_user_centroids(uid)
+        check("invalidate removes the cached row", len(cached_rows()) == 0)
+
+        rec3, div3, hit = get_user_centroids(uid)
+        check("after invalidation, the new vote is recomputed and reflected", not hit and same(rec3, np.average(v, axis=0, weights=[1.6, 0.4, 0.3])) and not same(rec3, rec1))
+        check("the diversity centroid is left unchanged by a vote change", same(div3, div1))
+
+        log_status(educated, "finished")
+        invalidate_user_centroids(uid)
+        rec4, div4, hit = get_user_centroids(uid)
+        v4 = vecs_of(base + [{**educated, "status": "finished"}])
+        check("moving a want_to_read book to finished changes both centroids", 
+            not hit and same(rec4, np.average(v4, axis=0, weights=[1.6, 0.4, 0.3, 1.0])) and same(div4, v4.mean(axis=0)))
+
+        recs = personalized_recommend(uid, n=5)
+        own_ids = {b["id"] for b in (hobbit, notw, circe, educated)}
+        check("personalized picks exclude the user's own books", bool(recs) and not ({r["id"] for r in recs} & own_ids))
+        check("each pick has an explanation and no raw embedding", bool(recs) and all(r.get("explanation") and "embedding" not in r for r in recs))
+        print(" personalized picks:", [r["title"] for r in recs])
+
+        check("no eligible books -> (None, None)",
+            compute_user_centroids([], {}) == (None, None)
+            and compute_user_centroids([{**educated, "status": "want_to_read"}], {}) == (None, None))
+
+    finally:
+        supabase.table("feedback").delete().eq("user_id", uid).execute()
+        supabase.table("reading_status").delete().eq("user_id", uid).execute()
+        supabase.auth.admin.delete_user(uid)
+        print(" (temporary test user removed)")
 
     failures = results.count(False)
     print(f"\n{'PASS' if failures == 0 else 'FAIL'}: {failures} mismatches")

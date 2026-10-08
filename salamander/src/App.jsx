@@ -42,13 +42,13 @@ function App() {
   }, [session])
 
   useEffect(() => {
-    if (!onboardingComplete || recommendations.length > 0) return
+    if (!session || !onboardingComplete || recommendations.length > 0) return
 
-    fetch('http://localhost:8000/recommendations/returning-no-history')
+    fetch(`http://localhost:8000/recommendations/personalized/${session.user.id}`)
       .then((res) => res.json())
       .then((data) => setRecommendations(data.recommendations))
-      .catch((err) => console.error('Failed to load returning-user feed', err))
-  }, [onboardingComplete, recommendations.length])
+      .catch((err) => console.error('Failed to load recommendations', err))
+  }, [session, onboardingComplete, recommendations.length])
 
   function handleOnboardingComplete(recs) {
     setRecommendations(recs)

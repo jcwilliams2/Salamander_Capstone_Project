@@ -1,7 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from recommend import zero_history_recommend, build_genre_centroids, get_current_bestsellers_with_covers
+from recommend import (zero_history_recommend, build_genre_centroids, 
+                        get_current_bestsellers_with_covers, 
+                        no_preference_fallback, 
+                        personalized_recommend, invalidate_user_centroids)
 from supabase_client import supabase
 
 app = FastAPI()
@@ -51,6 +54,7 @@ def record_feedback(request: FeedbackRequest):
         "book_id": request.book_id,
         "vote": request.vote,
     }, on_conflict="user_id,book_id").execute()
+    invalidate_user_centroids(request.user_id)
     return {"success": True}
 
 class ReadingStatusRequest(BaseModel):
@@ -65,6 +69,7 @@ def update_reading_status(request: ReadingStatusRequest):
         "book_id": request.book_id,
         "status": request.status,
     }, on_conflict="user_id,book_id").execute()
+    invalidate_user_centroids(request.user_id)
     return {"success": True}
 
 class DeleteStatusRequest(BaseModel):
@@ -74,6 +79,7 @@ class DeleteStatusRequest(BaseModel):
 @app.delete("/reading-status")
 def delete_reading_status(request: DeleteStatusRequest):
     supabase.table("reading_status").delete().eq("user_id", request.user_id).eq("book_id", request.book_id).execute()
+    invalidate_user_centroids(request.user_id)
     return {"success": True}
 
 @app.get("/user-onboarding-status/{user_id}")
@@ -92,3 +98,10 @@ def mark_onboarding_complete(request: CompleteOnboardingRequest):
     if not result.data:
         raise HTTPException(status_code=404, detail="No profile found for this user")
     return {"success": True}
+
+@app.get("/recommendations/personalized/{user_id}")
+def get_personalized_feed(user_id: str):
+    recs = personalized_recommend(user_id, n=10)
+    if not recs:
+        recs = no_preference_fallback(15)
+    return {"recommendations": recs}
