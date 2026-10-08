@@ -45,8 +45,13 @@ function App() {
     if (!session || !onboardingComplete || recommendations.length > 0) return
 
     fetch(`http://localhost:8000/recommendations/personalized/${session.user.id}`)
-      .then((res) => res.json())
-      .then((data) => setRecommendations(data.recommendations))
+      .then(async (res) => {
+        const data = await res.json().catch(() => null)
+        if (!res.ok || !Array.isArray(data?.recommendations)) {
+          throw new Error(`Unexpected response (${res.status})`)
+        }
+        setRecommendations(data.recommendations)
+      })
       .catch((err) => console.error('Failed to load recommendations', err))
   }, [session, onboardingComplete, recommendations.length])
 
