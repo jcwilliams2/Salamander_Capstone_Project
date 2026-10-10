@@ -5,6 +5,7 @@ from recommend import (zero_history_recommend, build_genre_centroids,
                         get_current_bestsellers_with_covers, 
                         no_preference_fallback, 
                         personalized_recommend, invalidate_user_centroids)
+from search import search_catalog, browse_catalog, attach_user_state
 from supabase_client import supabase
 
 app = FastAPI()
@@ -105,3 +106,13 @@ def get_personalized_feed(user_id: str):
     if not recs:
         recs = no_preference_fallback(15)
     return {"recommendations": recs}
+
+@app.get("/catalog/search")
+def catalog_search(q: str = "", user_id: str | None = None):
+    return {"results": attach_user_state(search_catalog(q), user_id)}
+
+@app.get("/catalog/browse")
+def catalog_browse(page: int = 1, page_size: int = 24, user_id: str | None = None):
+    page_size = min(max(page_size, 1), 60)
+    books, total = browse_catalog(page, page_size)
+    return {"results": attach_user_state(books, user_id), "page": max(page, 1), "total": total}
