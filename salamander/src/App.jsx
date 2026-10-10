@@ -5,7 +5,11 @@ import Login from './components/Login'
 import Onboarding from './components/Onboarding'
 import VoteControls from './components/VoteControls'
 import StatusSelector from './components/StatusSelector'
+import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
+import CatalogPage from './components/CatalogPage'
 import './App.css'
+
+const navStyle = ({ isActive }) => ({ fontWeight: isActive ? 'bold' : 'normal'})
 
 function App() {
   const [session, setSession] = useState(null)
@@ -78,27 +82,43 @@ function App() {
 
   return (
       <div>
-        <p>Logged in as {session.user.email}</p>
-        <button onClick={() => supabase.auth.signOut()}>Log out</button>
-
-        <h2>Your recommendations</h2>
-        {recommendations.map((book) => (
-          <div key={book.id || book.isbn} style={{ marginBottom: '12px' }}>
-            {book.cover_url &&  (
-              <img src={book.cover_url} alt={book.title} style={{ height: '120px' }} />
-            )}
-            <div>
-              <strong>{book.title}</strong> by {book.author}
-            </div>
-            <p style={{ fontSize: '0.9em', color: '#666' }}>{book.explanation}</p>
-            {book.id && (
-              <>
-                <VoteControls userId={session.user.id} bookId={book.id} />
-                <StatusSelector userId={session.user.id} bookId={book.id} />
-              </>
-            )}
-          </div>
-        ))}
+        <nav style={{ display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'center', marginBottome: '16px' }}>
+          <strong>Salamander</strong>
+          <NavLink to="/" end style={navStyle}>Recommendations</NavLink>
+          <NavLink to="/catalog" style={navStyle}>Catalog</NavLink>
+          <span>{session.user.email}</span>
+          <button onClick={() => supabase.auth.signOut()}>Log out</button>
+        </nav>
+        
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <div>
+                <h2>Your Recommendations</h2>
+                {recommendations.map((book) => (
+                  <div key={book.id || book.isbn} style={{ marginBottom: '12px' }}>
+                    {book.cover_url &&  (
+                      <img src={book.cover_url} alt={book.title} style={{ height: '120px' }} />
+                    )}
+                    <div>
+                      <strong>{book.title}</strong> by {book.author}
+                    </div>
+                    <p style={{ fontSize: '0.9em', color: '#666' }}>{book.explanation}</p>
+                    {book.id && (
+                      <>
+                        <VoteControls userId={session.user.id} bookId={book.id} />
+                        <StatusSelector userId={session.user.id} bookId={book.id} />
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            }
+          />
+          <Route path="/catalog" element={<CatalogPage userId={session.user.id} />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </div>
     )
 }
