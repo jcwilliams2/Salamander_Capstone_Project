@@ -3,6 +3,7 @@ import re
 import time
 import requests
 import html
+from names import flip_name
 from langdetect import detect, LangDetectException
 from sentence_transformers import SentenceTransformer
 from supabase_client import supabase
@@ -55,6 +56,11 @@ HEADERS = {"User-Agent": "Salamander-Capstone-Project/1.0 (jcwilliams14@student.
 ISBNDB_HEADERS = {"Authorization": os.environ["ISBNDB_API_KEY"]}
 
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+def is_placeholder(title, author):
+    t = (title or "").strip().lower()
+    a = (author or "").lower()
+    return bool(re.match(r"untitled\b", t)) or "to be revealed" in a or "to be confirmed" in a
 
 def generate_embedding(text):
     if not text:
@@ -130,7 +136,7 @@ def fetch_isbndb_metadata(isbn):
 
     return {
         "title": book.get("title"),
-        "author": ", ".join(book.get("authors", [])) if book.get("authors") else None,
+        "author": ", ".join(flip_name(a) for a in book.get("authors", [])) if book.get("authors") else None,
         "isbn": isbn,
         "description": book.get("synopsis") or book.get("excerpt"),
         "genre_tags": book.get("subjects"),
@@ -163,7 +169,7 @@ def fetch_google_books_metadata(isbn):
 
     return {
         "title": volume_info.get("title"),
-        "author": ", ".join(authors) if authors else None,
+        "author": ", ".join(flip_name(a) for a in authors) if authors else None,
         "isbn": isbn,
         "description": volume_info.get("description"),
         "genre_tags": volume_info.get("categories"),
@@ -223,7 +229,7 @@ def fetch_open_library_metadata(isbn):
     for a in edition.get("authors", []):
         name = get_author(a["key"])
         if name:
-            author_names.append(name)
+            author_names.append(flip_name(name))
 
     cover_ids = edition.get("covers")
     cover_url = f"https://covers.openlibrary.org/b/id/{cover_ids[0]}-M.jpg" if cover_ids else None
@@ -287,6 +293,9 @@ def get_book_metadata(isbn):
 
     primary["source_tier"] = source_tier
     primary["author"] = author
+    if is_placeholder(primary.get("title"), author):
+        print(f" Skipping placeholder: {primary.get('title')}")
+        return None
     primary["raw_subjects"] = raw_subjects
     primary["genre_tags"] = normalize_genre_tags(raw_subjects)
 
@@ -307,7 +316,7 @@ def insert_book(book_data):
         return result
     except Exception as e:
         if "duplicate key" in str(e):
-            print(f" {book_data.gt('isbn')} already exists, skipping")
+            print(f" {book_data.get('isbn')} already exists, skipping")
             return "duplicate"
         raise
 
