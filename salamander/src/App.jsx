@@ -7,6 +7,7 @@ import VoteControls from './components/VoteControls'
 import StatusSelector from './components/StatusSelector'
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import CatalogPage from './components/CatalogPage'
+import DiversityPicks from './components/DiversityPicks'
 import './App.css'
 
 const navStyle = ({ isActive }) => ({ fontWeight: isActive ? 'bold' : 'normal'})
@@ -82,7 +83,7 @@ function App() {
 
   return (
       <div>
-        <nav style={{ display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'center', marginBottome: '16px' }}>
+        <nav style={{ display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
           <strong>Salamander</strong>
           <NavLink to="/" end style={navStyle}>Recommendations</NavLink>
           <NavLink to="/catalog" style={navStyle}>Catalog</NavLink>
@@ -113,6 +114,7 @@ function App() {
                     )}
                   </div>
                 ))}
+                <DiversityPicks userId={session.user.id} />
               </div>
             }
           />

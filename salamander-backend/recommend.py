@@ -2,6 +2,7 @@ import numpy as np
 import json
 import os
 import requests
+from collections import Counter
 from datetime import date, datetime, timezone
 from supabase_client import supabase
 
@@ -39,6 +40,8 @@ GENRE_ADJACENCY = {
     "nonfiction": set(),
     "fiction": set(),
 }
+
+GENRE_DISPLAY = {"childrens": "children's", "self help": "self-help"}
 
 STATUS_BASE_WEIGHT = {
     "finished": 1.0,
@@ -238,12 +241,12 @@ def diversity_score(user_books):
         distances.append(cosine_distance(emb, centroid))
     return float(np.mean(distances))
 
-def find_diversity_gaps(user_books, all_books_with_embeddings, n=5, min_percentile=40, max_percentile=75):
+def find_diversity_gaps(user_books, all_books_with_embeddings, n=5, min_percentile=40, max_percentile=75, exclude_ids=None):
     if len(user_books) < 3:
         return []
 
     centroid = diversity_centroid(user_books)
-    user_ids = set(b['id'] for b in user_books)
+    user_ids = set(b['id'] for b in user_books) | set(exclude_ids or [])
 
     user_genres = set()
     for b in user_books:
@@ -450,9 +453,45 @@ def personalized_recommend(user_id, n=10):
         book.pop("embedding", None)
     return candidates
 
+def get_catalog_with_embeddings():
+    rows, start = [], 0
+    while True:
+        batch = supabase.table("books").select("id, title, author, cover_url, genre_tags, embedding").order("id").range(start, start + 999).execute().data
+        rows += batch
+        if len(batch) < 1000:
+            return rows
+        start += 1000
+
+def explain_diversity_suggestion(book, user_books):
+    def show(g):
+        return GENRE_DISPLAY.get(g, g)
+
+    counts = Counter(g for b in user_books for g in (b.get("genre_tags") or []))
+    for g in book.get("genre_tags") or []:
+        for u, _ in counts.most_common():
+            if u != g and (u in GENRE_ADJACENCY.get(g, set()) or g in GENRE_ADJACENCY.get(u, set())):
+                article = "an" if show(g)[0] in "aeiou" else "a"
+                return f"Something to explore: {article} {show(g)} pick that pairs well with the {show(u)} titles you've been reading."
+    return "Something to explore: a change of pace that pairs well with your library."
+
+def diversity_suggestions(user_id, n=5):
+    user_books, _ = get_user_books_with_feedback(user_id)
+    eligible = [b for b in user_books if b.get("status") in DIVERSITY_STATUSES]
+    if len(eligible) < 3:
+        return []
+    picks = find_diversity_gaps(eligible, get_catalog_with_embeddings(),
+                n=(n * 3), exclude_ids=[b["id"] for b in user_books],
+                )
+    picks = filter_similar_to_rejected(picks, get_rejected_books(user_id))[:n]
+    for book in picks:
+        book["explanation"] = explain_diversity_suggestion(book, eligible)
+        book.pop("embedding", None)
+        book.pop("distance", None)
+    return picks
+
 if __name__=="__main__":
     import uuid
-    print("T24")
+    print("T28")
     results = []
 
     def check(label, ok):
@@ -462,77 +501,45 @@ if __name__=="__main__":
     def get(isbn):
         return supabase.table("books").select("id, title, embedding").eq("isbn", isbn).execute().data[0]
 
-    def same(a, b):
-        return a is not None and b is not None and np.allclose(a, b, atol=1e-6)
-
-    def vecs_of(books):
-        return np.array([_to_vector(b["embedding"]) for b in books])
-
     hobbit, notw, circe = get("9780547928227"), get("9780756404741"), get("9780316556347")
     educated = get("9780399590504")
 
     tag = uuid.uuid4().hex[:8]
     uid = supabase.auth.admin.create_user({
-        "email": f"t24-{tag}@example.com",
+        "email": f"t28-{tag}@example.com",
         "password": f"Tmp-{tag}-pass1",
         "email_confirm": True,
-        "user_metadata": {"username": f"t24_{tag}"},
+        "user_metadata": {"username": f"t28_{tag}"},
     }).user.id
 
     try:
         def log_status(book, status):
             supabase.table("reading_status").upsert({"user_id": uid, "book_id": book["id"], "status": status}, on_conflict="user_id,book_id").execute()
 
-        def vote(book, v):
-            supabase.table("feedback").upsert({"user_id": uid, "book_id":book["id"], "vote": v}, on_conflict="user_id,book_id").execute()
-
-        def cached_rows():
-            return supabase.table("user_centroids").select("user_id").eq("user_id", uid).execute().data
-
         log_status(hobbit, "finished")
         log_status(notw, "finished")
-        log_status(circe, 'dnf')
+        check("fewer than 3 finished/DNF books -> no suggestions", diversity_suggestions(uid) == [])
+
+        log_status(circe, "finished")
         log_status(educated, "want_to_read")
-        vote(hobbit, 1)
+        picks = diversity_suggestions(uid, n=5)
+        check("3 finished books -> suggestions returned", bool(picks))
 
-        rec1, div1, hit = get_user_centroids(uid)
-        check("first call computes (cache miss) and stores a row", not hit and len(cached_rows()) == 1)
+        own_ids = {b["id"] for b in (hobbit, notw, circe, educated)}
+        check("none are the user's own books (want_to_read included)", not ({p["id"] for p in picks} & own_ids))
+        check("no duplicate picks", len({p["id"] for p in picks}) == len(picks))
+        check("each has title, author, explanation and no raw embedding", all(p.get("title") and p.get("author") and p.get("explanation") and "embedding" not in p for p in picks))
 
-        rec2, div2, hit = get_user_centroids(uid)
-        check("second call is served from the cache and matches", hit and same(rec1, rec2) and same(div1, div2))
-
-        base = [{**hobbit, "status": "finished"}, {**notw, "status": "finished"}, {**circe, "status": "dnf"}]
-        v = vecs_of(base)
-        check("cached values match an independent calculation (want_to_read excluded)", 
-            same(rec1, np.average(v, axis=0, weights=[1.6, 1.0, 0.3])) and same(div1, v.mean(axis=0)))
-        
-        vote(notw, -1)
-        _r, _d, hit = get_user_centroids(uid)
-        check("cache is reused even after the vote changed (nothing invalidated yet)", hit)
-
-        invalidate_user_centroids(uid)
-        check("invalidate removes the cached row", len(cached_rows()) == 0)
-
-        rec3, div3, hit = get_user_centroids(uid)
-        check("after invalidation, the new vote is recomputed and reflected", not hit and same(rec3, np.average(v, axis=0, weights=[1.6, 0.4, 0.3])) and not same(rec3, rec1))
-        check("the diversity centroid is left unchanged by a vote change", same(div3, div1))
-
-        log_status(educated, "finished")
-        invalidate_user_centroids(uid)
-        rec4, div4, hit = get_user_centroids(uid)
-        v4 = vecs_of(base + [{**educated, "status": "finished"}])
-        check("moving a want_to_read book to finished changes both centroids", 
-            not hit and same(rec4, np.average(v4, axis=0, weights=[1.6, 0.4, 0.3, 1.0])) and same(div4, v4.mean(axis=0)))
+        banned = ["too much", "only", "lack", "narrow", "limited", "stuck", "rut", "should", "need to", "boring", "same"]
+        check("copy is neutral (no judgemental wording)", all(not any(w in p["explanation"].lower() for w in banned) for p in picks))
 
         recs = personalized_recommend(uid, n=5)
-        own_ids = {b["id"] for b in (hobbit, notw, circe, educated)}
-        check("personalized picks exclude the user's own books", bool(recs) and not ({r["id"] for r in recs} & own_ids))
-        check("each pick has an explanation and no raw embedding", bool(recs) and all(r.get("explanation") and "embedding" not in r for r in recs))
-        print(" personalized picks:", [r["title"] for r in recs])
-
-        check("no eligible books -> (None, None)",
-            compute_user_centroids([], {}) == (None, None)
-            and compute_user_centroids([{**educated, "status": "want_to_read"}], {}) == (None, None))
+        div = user_diversity_centroid_from_books([{**hobbit, "status": "finished"}, {**notw, "status": "finished"}, {**circe, "status": "finished"}])
+        ids = [p["id"] for p in picks] + [r["id"] for r in recs]
+        emb = {b["id"]: b["embedding"] for b in supabase.table("books").select("id, embedding").in_("id", ids).execute().data}
+        avg = lambda items: np.mean([cosine_distance(_to_vector(emb[i["id"]]), div) for i in items])
+        check("suggestions sit farther from the user's centroid than the usual picks", avg(picks) > avg(recs))
+        print(" suggestions:", [(p["title"], p["explanation"]) for p in picks])
 
     finally:
         supabase.table("feedback").delete().eq("user_id", uid).execute()

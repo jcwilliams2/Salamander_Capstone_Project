@@ -4,7 +4,8 @@ from pydantic import BaseModel
 from recommend import (zero_history_recommend, build_genre_centroids, 
                         get_current_bestsellers_with_covers, 
                         no_preference_fallback, 
-                        personalized_recommend, invalidate_user_centroids)
+                        personalized_recommend, invalidate_user_centroids,
+                        diversity_suggestions)
 from search import search_catalog, browse_catalog, attach_user_state
 from supabase_client import supabase
 
@@ -106,6 +107,10 @@ def get_personalized_feed(user_id: str):
     if not recs:
         recs = no_preference_fallback(15)
     return {"recommendations": recs}
+
+@app.get("/recommendations/diversity/{user_id}")
+def get_diversity_feed(user_id: str):
+    return {"suggestions": diversity_suggestions(user_id, n=5)}
 
 @app.get("/catalog/search")
 def catalog_search(q: str = "", user_id: str | None = None):
