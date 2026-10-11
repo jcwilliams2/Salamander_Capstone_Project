@@ -1,14 +1,7 @@
 import { useState, useEffect } from 'react'
-import VoteControls from './VoteControls'
-import StatusSelector from './StatusSelector'
+import BookCardGrid from './BookCardGrid'
 
 const API = 'http://localhost:8000'
-
-function Cover({ url, title }) {
-    const [failed, setFailed] = useState(false)
-    if (!url || failed) return null
-    return <img src={url} alt={title} onError={() => setFailed(true)} style={{ height: '120px' }} />
-}
 
 function DiversityPicks({ userId }) {
     const [state, setState] = useState({ loaded: false, items: [] })
@@ -42,20 +35,8 @@ function DiversityPicks({ userId }) {
                 </p>
             ) : (
                 <>
-                    <p style={{ color: '#666' }}>
-                        A few picks that branch out from what you've been reading.
-                    </p>
-                    {state.items.map((book) => (
-                        <div key={book.id} style={{ marginBottom: '12px' }}>
-                            <Cover url={book.cover_url} title={book.title} />
-                            <div><strong>{book.title}</strong> by {book.author}</div>
-                            <p style={{ fontSize: '0.9em', color: '#666' }}>{book.explanation}</p>
-                            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                <VoteControls userId={userId} bookId={book.id} />
-                                <StatusSelector userId={userId} bookId={book.id} />
-                            </div>
-                        </div>
-                    ))}
+                    <p style={{ color: '#666' }}>A few picks that branch out from what you've been reading.</p>
+                    <BookCardGrid books={state.items} userId={userId} />
                 </>
             )}
         </div>

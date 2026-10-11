@@ -1,13 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabaseClient'
+import { EXPLORE_LEVELS } from './lib/exploreLevels'
 import Signup from './components/Signup'
 import Login from './components/Login'
 import Onboarding from './components/Onboarding'
-import VoteControls from './components/VoteControls'
-import StatusSelector from './components/StatusSelector'
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import CatalogPage from './components/CatalogPage'
+import BookCardGrid from './components/BookCardGrid'
 import DiversityPicks from './components/DiversityPicks'
+import ExplorationControl from './components/ExplorationControl'
 import './App.css'
 
 const navStyle = ({ isActive }) => ({ fontWeight: isActive ? 'bold' : 'normal'})
@@ -18,6 +19,8 @@ function App() {
   const [onboardingComplete, setOnboardingComplete] = useState(false)
   const [onboardingChecked, setOnboardingChecked] = useState(false)
   const [recommendations, setRecommendations] = useState([])
+  const [explore, setExplore] = useState(0)
+  const requestId = useRef(0)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -28,6 +31,7 @@ function App() {
         setOnboardingComplete(false)
         setOnboardingChecked(false)
         setRecommendations([])
+        setExplore(0)
       }
     })
 
@@ -65,6 +69,20 @@ function App() {
     setOnboardingComplete(true)
   }
 
+  function handleExploreChange(index) {
+    setExplore(index)
+    const mine = ++requestId.current
+    fetch(`http://localhost:8000/recommendations/personalized/${session.user.id}?explore=${EXPLORE_LEVELS[index].value}`)
+      .then(async (res) => {
+        const data = await res.json().catch(() => null)
+        if (!res.ok || !Array.isArray(data?.recommendations)) {
+          throw new Error(`Unexpected response (${res.status})`)
+        }
+        if (mine === requestId.current) setRecommendations(data.recommendations)
+      })
+      .catch((err) => console.error('Failed to update recommendations', err))
+  }
+
   if (!session) {
     return showSignup ? (
       <Signup onSuccess={() => {}} switchToLogin={() => setShowSignup(false)} />
@@ -97,23 +115,10 @@ function App() {
             element={
               <div>
                 <h2>Your Recommendations</h2>
-                {recommendations.map((book) => (
-                  <div key={book.id || book.isbn} style={{ marginBottom: '12px' }}>
-                    {book.cover_url &&  (
-                      <img src={book.cover_url} alt={book.title} style={{ height: '120px' }} />
-                    )}
-                    <div>
-                      <strong>{book.title}</strong> by {book.author}
-                    </div>
-                    <p style={{ fontSize: '0.9em', color: '#666' }}>{book.explanation}</p>
-                    {book.id && (
-                      <>
-                        <VoteControls userId={session.user.id} bookId={book.id} />
-                        <StatusSelector userId={session.user.id} bookId={book.id} />
-                      </>
-                    )}
-                  </div>
-                ))}
+                {recommendations.some((b) => b.id) && (
+                  <ExplorationControl level={explore} onChange={handleExploreChange} />
+                )}
+                <BookCardGrid books={recommendations} userId={session.user.id} />
                 <DiversityPicks userId={session.user.id} />
               </div>
             }

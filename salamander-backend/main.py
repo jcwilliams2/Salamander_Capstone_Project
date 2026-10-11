@@ -102,15 +102,15 @@ def mark_onboarding_complete(request: CompleteOnboardingRequest):
     return {"success": True}
 
 @app.get("/recommendations/personalized/{user_id}")
-def get_personalized_feed(user_id: str):
-    recs = personalized_recommend(user_id, n=10)
+def get_personalized_feed(user_id: str, explore: float = 0.0):
+    recs = personalized_recommend(user_id, n=12, explore=explore)
     if not recs:
         recs = no_preference_fallback(15)
     return {"recommendations": recs}
 
 @app.get("/recommendations/diversity/{user_id}")
 def get_diversity_feed(user_id: str):
-    return {"suggestions": diversity_suggestions(user_id, n=5)}
+    return {"suggestions": diversity_suggestions(user_id, n=6)}
 
 @app.get("/catalog/search")
 def catalog_search(q: str = "", user_id: str | None = None):

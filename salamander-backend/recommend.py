@@ -103,13 +103,23 @@ def get_coldstart_path(user_books):
     else:
         return "broader_history"
 
+def attach_covers(books):
+    missing = [b["id"] for b in books if "cover_url" not in b]
+    if not missing:
+        return books
+    rows = supabase.table("books").select("id, cover_url").in_("id", missing).execute().data
+    by_id = {r["id"]: r["cover_url"] for r in rows}
+    for b in books:
+        b.setdefault("cover_url", by_id.get(b["id"]))
+    return books
+
 def query_similar_books(query_vector, exclude_ids=None, limit=10):
     result = supabase.rpc('match_books', {
         'query_embedding': query_vector,
         'match_count': limit,
         'exclude_ids': exclude_ids or []
     }).execute()
-    return result.data
+    return attach_covers(result.data)
 
 def explain_recommendation(book, user_books=None, selected_genres=None, genre_centroids=None):
     if user_books:
@@ -433,16 +443,43 @@ def get_books_by_status(user_id, statuses):
     ids = [r["book_id"] for r in rows]
     return supabase.table("books").select("id, title, embedding").in_("id", ids).execute().data
 
-def personalized_recommend(user_id, n=10):
-    rec, _div, _cached = get_user_centroids(user_id)
+def explore_rerank(candidates, rec, div, n, explore):
+    explore = min(max(float(explore), 0.0), 1.0)
+    if explore == 0 or len(candidates) <= n:
+        return candidates[:n]
+
+    anchor = div if div is not None else rec
+    vecs = {b["id"]: _to_vector(b["embedding"]) for b in candidates}
+    rel = {i: 1 - cosine_distance(v, rec) for i, v in vecs.items()}
+    novelty = {i: cosine_distance(v, anchor) for i, v in vecs.items()}
+
+    remaining, chosen = list(candidates), []
+    while remaining and len(chosen) < n:
+        def score(b):
+            redundancy = max((1 - cosine_distance(vecs[b["id"]], vecs[c["id"]]) for c in chosen), default=0.0)
+            return (1 - explore) * rel[b["id"]] + explore * (novelty[b["id"]] - redundancy)
+        best = max(remaining, key=score)
+        chosen.append(best)
+        remaining.remove(best)
+    return chosen
+
+def intra_list_distance(vectors):
+    d = [cosine_distance(vectors[i], vectors[j])
+        for i in range(len(vectors)) for j in range(i + 1, len(vectors))]
+    return float(np.mean(d)) if d else 0.0
+
+def personalized_recommend(user_id, n=10, explore=0.0):
+    rec, div, _cached = get_user_centroids(user_id)
     if rec is None:
         return None
     
     logged = supabase.table("reading_status").select("book_id").eq("user_id", user_id).execute().data
     exclude_ids = [r["book_id"] for r in logged]
 
-    candidates = query_similar_books(rec.tolist(), exclude_ids=exclude_ids, limit=(n *3))
-    candidates = filter_similar_to_rejected(candidates, get_rejected_books(user_id))[:n]
+    pool = (n * 6) if explore and explore > 0 else (n * 3)
+    candidates = query_similar_books(rec.tolist(), exclude_ids=exclude_ids, limit=pool)
+    candidates = filter_similar_to_rejected(candidates, get_rejected_books(user_id))
+    candidates = explore_rerank(candidates, rec, div, n, explore)
 
     finished = get_books_by_status(user_id, {"finished"})
     for book in candidates:
@@ -491,7 +528,7 @@ def diversity_suggestions(user_id, n=5):
 
 if __name__=="__main__":
     import uuid
-    print("T28")
+    print("T36")
     results = []
 
     def check(label, ok):
@@ -502,44 +539,53 @@ if __name__=="__main__":
         return supabase.table("books").select("id, title, embedding").eq("isbn", isbn).execute().data[0]
 
     hobbit, notw, circe = get("9780547928227"), get("9780756404741"), get("9780316556347")
-    educated = get("9780399590504")
 
     tag = uuid.uuid4().hex[:8]
     uid = supabase.auth.admin.create_user({
-        "email": f"t28-{tag}@example.com",
+        "email": f"t36-{tag}@example.com",
         "password": f"Tmp-{tag}-pass1",
         "email_confirm": True,
-        "user_metadata": {"username": f"t28_{tag}"},
+        "user_metadata": {"username": f"t36_{tag}"},
     }).user.id
 
     try:
         def log_status(book, status):
             supabase.table("reading_status").upsert({"user_id": uid, "book_id": book["id"], "status": status}, on_conflict="user_id,book_id").execute()
 
-        log_status(hobbit, "finished")
-        log_status(notw, "finished")
-        check("fewer than 3 finished/DNF books -> no suggestions", diversity_suggestions(uid) == [])
+        for b in (hobbit, notw, circe):
+            log_status(b, "finished")
 
-        log_status(circe, "finished")
-        log_status(educated, "want_to_read")
-        picks = diversity_suggestions(uid, n=5)
-        check("3 finished books -> suggestions returned", bool(picks))
+        rec, div, _ = get_user_centroids(uid)
 
-        own_ids = {b["id"] for b in (hobbit, notw, circe, educated)}
-        check("none are the user's own books (want_to_read included)", not ({p["id"] for p in picks} & own_ids))
-        check("no duplicate picks", len({p["id"] for p in picks}) == len(picks))
-        check("each has title, author, explanation and no raw embedding", all(p.get("title") and p.get("author") and p.get("explanation") and "embedding" not in p for p in picks))
+        def embs(books):
+            ids = [b["id"] for b in books]
+            rows = supabase.table("books").select("id, embedding").in_("id", ids).execute().data
+            by = {r["id"]: _to_vector(r["embedding"]) for r in rows}
+            return [by[i] for i in ids]
 
-        banned = ["too much", "only", "lack", "narrow", "limited", "stuck", "rut", "should", "need to", "boring", "same"]
-        check("copy is neutral (no judgemental wording)", all(not any(w in p["explanation"].lower() for w in banned) for p in picks))
+        levels = (0, 0.35, 0.7, 1.0)
+        picks = {w: personalized_recommend(uid, n=6, explore=w) for w in levels}
+        ild = {w: intra_list_distance(embs(picks[w])) for w in levels}
+        rel = {w: float(np.mean([1 - cosine_distance(v, rec) for v in embs(picks[w])])) for w in levels}
+        far = {w: float(np.mean([cosine_distance(v, div) for v in embs(picks[w])])) for w in levels}
 
-        recs = personalized_recommend(uid, n=5)
-        div = user_diversity_centroid_from_books([{**hobbit, "status": "finished"}, {**notw, "status": "finished"}, {**circe, "status": "finished"}])
-        ids = [p["id"] for p in picks] + [r["id"] for r in recs]
-        emb = {b["id"]: b["embedding"] for b in supabase.table("books").select("id, embedding").in_("id", ids).execute().data}
-        avg = lambda items: np.mean([cosine_distance(_to_vector(emb[i["id"]]), div) for i in items])
-        check("suggestions sit farther from the user's centroid than the usual picks", avg(picks) > avg(recs))
-        print(" suggestions:", [(p["title"], p["explanation"]) for p in picks])
+        own = {b["id"] for b in (hobbit, notw, circe)}
+        check("every level returns 6 picks, none already logged, none with a raw embedding", 
+                all(len(p) == 6 and not ({x["id"] for x in p} & own) and all("embedding" not in x and x.get("explanation") for x in p)
+                for p in picks.values()))
+        check("explore=0 matches the original behaviour exactly", 
+                [x["id"] for x in picks[0]] == [x["id"] for x in personalized_recommend(uid, n=6)])
+        check("out-of-range values are clamped (5 -> 1, -1 -> 0)",
+                [x["id"] for x in personalized_recommend(uid, n=6, explore=5)] == [x["id"] for x in picks[1.0]]
+                and [x["id"] for x in personalized_recommend(uid, n=6, explore=-1)] == [x["id"] for x in picks[0]])
+        check("intra-list distance rises with exploration (0.7 and 1.0 vs 0)", ild[0.7] > ild[0] and ild[1.0] > ild[0])
+        check("picks sit farther from the diversity centroid as exploration rises", far[1.0] > far[0])
+        check("closeness to the user's taste falls as exploration rises (this represents the real trade-off)", rel[0] > rel[1.0])
+
+        for w in levels:
+            print(f" explore={w}: ILD={ild[w]:.3f}  relevance={rel[w]:.3f}  distance-from-center={far[w]:.3f}")
+        print(" familiar:", [x["title"] for x in picks[0]])
+        print(" adventurous:", [x["title"] for x in picks[0.7]])
 
     finally:
         supabase.table("feedback").delete().eq("user_id", uid).execute()
