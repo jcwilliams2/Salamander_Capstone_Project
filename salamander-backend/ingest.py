@@ -34,7 +34,15 @@ GENRE_KEYWORD_MAP = {
     "comic": "graphic novel",
     "self-help": "self help",
     "self help": "self help",
+    "art history": "art",
+    "fine art": "art",
+    "art criticism": "art",
+    "painting": "art",
+    "photography": "art",
     "history": "history",
+    "social science": "social science",
+    "sociology": "social science",
+    "anthropology": "social science",
     "science": "science",
     "philosophy": "philosophy",
     "religion": "religion",
@@ -308,9 +316,26 @@ def get_book_metadata(isbn):
 
     return primary
 
+def _author_key(author):
+    first = (author or "").split(",")[0]
+    return re.sub(r"[^a-z]", "", first.lower())
+
+def _escape_like(text):
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+def is_duplicate_work(title, author):
+    key = _author_key(author)
+    if not key:
+        return False
+    rows = supabase.table("books").select("id, author").ilike("title", _escape_like(title.strip())).execute().data
+    return any(_author_key(r.get("author")) == key for r in rows)
+
 def insert_book(book_data):
     if not book_data or not book_data.get("title"):
         return None
+    if is_duplicate_work(book_data["title"], book_data.get("author")):
+        print(f" Skipping duplicate edition: {book_data['title']} ({book_data.get('author')})")
+        return "duplicate"
     try:
         result = supabase.table("books").insert(book_data).execute()
         return result

@@ -6,7 +6,7 @@ const GENRE_OPTIONS = [
   'young adult', 'childrens', 'poetry', 'graphic novel', 'self help',
   'history', 'science', 'philosophy', 'religion', 'business',
   'true crime', 'crime fiction', 'humor', 'cooking', 'travel',
-  'psychology', 'politics', 'sports', 'nonfiction'
+  'psychology', 'politics', 'sports', 'nonfiction', 'social science', 'art',
 ]
 
 function Onboarding({ userId, onComplete }) {

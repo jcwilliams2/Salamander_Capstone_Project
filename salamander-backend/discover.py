@@ -9,8 +9,8 @@ NYT_API_KEY = os.environ["NYT_API_KEY"]
 OPEN_LIBRARY_SUBJECTS = [
     "fantasy", "mystery", "poetry", "cooking", "true_crime",
     "science_fiction", "biography", "graphic_novels", "self_help", "travel",
-    "horror", "romance", "young_adult", "history", "philosophy", "humor",
-    "psychology", "art", "crime_fiction", "classic_literature",
+    "sociology", "anthropology", "horror", "romance", "young_adult", "history", 
+    "philosophy", "humor", "psychology", "art", "crime_fiction", "classic_literature",
 ]
 
 NYT_LISTS = [
@@ -99,6 +99,6 @@ def ingest_discovered_books(isbn_list):
     print(f"\nIngested {successes}/{len(isbn_list)}. Failed: {failures}")
 
 if __name__ == "__main__":
-    new_isbns = build_discovery_list(per_subject_limit=10)
+    new_isbns = build_discovery_list(per_subject_limit=45)
     print(f"\nTotal new, deduplicated ISBNs discovered: {len(new_isbns)}")
     ingest_discovered_books(new_isbns)
