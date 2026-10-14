@@ -62,6 +62,7 @@ GENRE_KEYWORD_MAP = {
 
 HEADERS = {"User-Agent": "Salamander-Capstone-Project/1.0 (jcwilliams14@student.fullsail.edu)"}
 ISBNDB_HEADERS = {"Authorization": os.environ["ISBNDB_API_KEY"]}
+MIN_DESCRIPTION_LENGTH = 50
 
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
@@ -152,8 +153,13 @@ def fetch_isbndb_metadata(isbn):
     }
 
 def fetch_google_books_metadata(isbn):
+    params = {"q": f"isbn:{isbn}"}
+    key = os.environ.get("GOOGLE_BOOKS_API_KEY")
+    if key:
+        params["key"] = key
     resp = requests.get(
-        f"https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn}", 
+        f"https://www.googleapis.com/books/v1/volumes", 
+        params=params,
         timeout=10
     )
     time.sleep(0.5)
@@ -302,14 +308,20 @@ def get_book_metadata(isbn):
     primary["source_tier"] = source_tier
     primary["author"] = author
     if is_placeholder(primary.get("title"), author):
-        print(f" Skipping placeholder: {primary.get('title')}")
+        print(f" Skipping placeholder: {primary.get('title')} / {author}")
         return None
     primary["raw_subjects"] = raw_subjects
     primary["genre_tags"] = normalize_genre_tags(raw_subjects)
 
     cleaned_description = clean_description(primary.get("description"))
+    if not cleaned_description or len(cleaned_description) < MIN_DESCRIPTION_LENGTH:
+        print(f" Skipping {isbn}: no usable description ({primary.get('title')})")
+        return None
     primary["description"] = cleaned_description
-    primary["is_english"] = is_english(cleaned_description) if cleaned_description else None
+    primary["is_english"] = is_english(cleaned_description)
+    if not primary["is_english"]:
+        print(f" Skipping {isbn}: description not English ({primary.get('title')})")
+        return None
 
     embedding_text = build_embedding_text(primary.get("title"), cleaned_description)
     primary["embedding"] = generate_embedding(embedding_text)
