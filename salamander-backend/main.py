@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from datetime import datetime, timezone
 from recommend import (zero_history_recommend, build_genre_centroids, 
                         get_current_bestsellers_with_covers, 
                         no_preference_fallback, 
@@ -66,13 +67,36 @@ class ReadingStatusRequest(BaseModel):
 
 @app.post("/reading-status")
 def update_reading_status(request: ReadingStatusRequest):
-    result = supabase.table("reading_status").upsert({
+    now = datetime.now(timezone.utc).isoformat()
+    row = {
         "user_id": request.user_id,
         "book_id": request.book_id,
         "status": request.status,
-    }, on_conflict="user_id,book_id").execute()
+        "updated_at": now,
+        "finished_at": None,
+    }
+    if request.status == "finished":
+        existing = (supabase.table("reading_status").select("finished_at")
+                    .eq("user_id", request.user_id).eq("book_id", request.book_id)
+                    .execute().data)
+        row["finished_at"] = (existing[0].get("finished_at") if existing else None) or now
+    supabase.table("reading_status").upsert(row, on_conflict="user_id,book_id").execute()
     invalidate_user_centroids(request.user_id)
     return {"success": True}
+
+@app.get("/want-to-read/{user_id}")
+def want_to_read_list(user_id: str):
+    rows = (supabase.table("reading_status").select("book_id, updated_at")
+            .eq("user_id", user_id).eq("status", "want_to_read")
+            .order("updated_at", desc=True).execute().data)
+    if not rows:
+        return {"results": []}
+    ids = [r["book_id"] for r in rows]
+    books = (supabase.table("books").select("id, title, author, cover_url, genre_tags")
+            .in_("id", ids).execute().data)
+    by_id = {b["id"]: b for b in books}
+    ordered = [by_id[i] for i in ids if i in by_id]
+    return {"results": attach_user_state(ordered, user_id)}
 
 class DeleteStatusRequest(BaseModel):
     user_id: str

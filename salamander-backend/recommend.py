@@ -530,7 +530,7 @@ def diversity_suggestions(user_id, n=5):
 
 if __name__=="__main__":
     import uuid
-    print("T36")
+    print("T31")
     results = []
 
     def check(label, ok):
@@ -542,58 +542,77 @@ if __name__=="__main__":
 
     hobbit, notw, circe = get("9780547928227"), get("9780756404741"), get("9780316556347")
 
-    tag = uuid.uuid4().hex[:8]
-    uid = supabase.auth.admin.create_user({
-        "email": f"t36-{tag}@example.com",
-        "password": f"Tmp-{tag}-pass1",
-        "email_confirm": True,
-        "user_metadata": {"username": f"t36_{tag}"},
-    }).user.id
+    def make_user(prefix):
+        tag = uuid.uuid4().hex[:8]
+        return supabase.auth.admin.create_user({
+            "email": f"{prefix}-{tag}@example.com",
+            "password": f"Tmp-{tag}-pass1",
+            "email_confirm": True,
+            "user_metadata": {"username": f"{prefix}_{tag}"},
+        }).user.id
+
+    uid, solo = make_user("t31a"), make_user("t31b")
 
     try:
-        def log_status(book, status):
-            supabase.table("reading_status").upsert({"user_id": uid, "book_id": book["id"], "status": status}, on_conflict="user_id,book_id").execute()
+        def log_status(user, book, status):
+            supabase.table("reading_status").upsert({"user_id": user, "book_id": book["id"], "status": status}, on_conflict="user_id,book_id").execute()
+            invalidate_user_centroids(user)
+
+        def vote(user, book, v):
+            supabase.table("feedback").delete().eq("user_id", user).eq("book_id", book["id"]).execute()
+            supabase.table("feedback").insert({"user_id": user, "book_id": book["id"], "vote": v}).execute()
+            invalidate_user_centroids(user)
+
+        same = lambda a, b: bool(np.allclose(a, b))
+        ids = lambda books: {b["id"] for b in books}
 
         for b in (hobbit, notw, circe):
-            log_status(b, "finished")
+            log_status(uid, b, "finished")
+        rec0, div0, _ = get_user_centroids(uid)
+        before = personalized_recommend(uid, n=10)
+        target = before[0]
+        print(f" (using top recommendation as the test book: {target['title']})")
 
-        rec, div, _ = get_user_centroids(uid)
+        log_status(uid, target, "want_to_read")
+        rec1, div1, cached = get_user_centroids(uid)
+        check("status change invalidated the cache (centroids were recomputed)", cached is False)
+        check("want-to-read does not move the recommendation centroid", same(rec0, rec1))
+        check("want-to-read does not move the diversity centroid", same(div0, div1))
 
-        def embs(books):
-            ids = [b["id"] for b in books]
-            rows = supabase.table("books").select("id, embedding").in_("id", ids).execute().data
-            by = {r["id"]: _to_vector(r["embedding"]) for r in rows}
-            return [by[i] for i in ids]
+        after = personalized_recommend(uid, n=10)
+        check("want-to-read book is never recommended, and the list still fills to 10",
+                target["id"] not in ids(after) and len(after) == 10)
 
-        levels = (0, 0.35, 0.7, 1.0)
-        picks = {w: personalized_recommend(uid, n=6, explore=w) for w in levels}
-        ild = {w: intra_list_distance(embs(picks[w])) for w in levels}
-        rel = {w: float(np.mean([1 - cosine_distance(v, rec) for v in embs(picks[w])])) for w in levels}
-        far = {w: float(np.mean([cosine_distance(v, div) for v in embs(picks[w])])) for w in levels}
+        check("votes are ignored in the weighting (up == down == base weight)",
+                get_book_weight("want_to_read", 1) == get_book_weight("want_to_read", -1) == STATUS_BASE_WEIGHT["want_to_read"])
+        vote(uid, target, 1)
+        rec2, div2, _ = get_user_centroids(uid)
+        check("upvoting a want-to-read book leaves both centroids unchanged", same(rec1, rec2) and same(div1, div2))
 
-        own = {b["id"] for b in (hobbit, notw, circe)}
-        check("every level returns 6 picks, none already logged, none with a raw embedding", 
-                all(len(p) == 6 and not ({x["id"] for x in p} & own) and all("embedding" not in x and x.get("explanation") for x in p)
-                for p in picks.values()))
-        check("explore=0 matches the original behaviour exactly", 
-                [x["id"] for x in picks[0]] == [x["id"] for x in personalized_recommend(uid, n=6)])
-        check("out-of-range values are clamped (5 -> 1, -1 -> 0)",
-                [x["id"] for x in personalized_recommend(uid, n=6, explore=5)] == [x["id"] for x in picks[1.0]]
-                and [x["id"] for x in personalized_recommend(uid, n=6, explore=-1)] == [x["id"] for x in picks[0]])
-        check("intra-list distance rises with exploration (0.7 and 1.0 vs 0)", ild[0.7] > ild[0] and ild[1.0] > ild[0])
-        check("picks sit farther from the diversity centroid as exploration rises", far[1.0] > far[0])
-        check("closeness to the user's taste falls as exploration rises (this represents the real trade-off)", rel[0] > rel[1.0])
+        check("want-to-read book is excluded from diversity suggestions",
+                target["id"] not in ids(diversity_suggestions(uid, n=10)))
 
-        for w in levels:
-            print(f" explore={w}: ILD={ild[w]:.3f}  relevance={rel[w]:.3f}  distance-from-center={far[w]:.3f}")
-        print(" familiar:", [x["title"] for x in picks[0]])
-        print(" adventurous:", [x["title"] for x in picks[0.7]])
+        log_status(uid, target, "finished")
+        rec3, div3, _ = get_user_centroids(uid)
+        check("marking it finished moves the recommendation centroid", not same(rec2, rec3))
+        check("marking it finished moves the diversity centroid", not same(div2, div3))
+        check("a finished book is still never recommended back",
+                target["id"] not in ids(personalized_recommend(uid, n=10)))
+
+        log_status(solo, hobbit, "want_to_read")
+        log_status(solo, notw, "want_to_read")
+        rec_s, div_s, _ = get_user_centroids(solo)
+        check("only-want-to-read user has no centroids yet", rec_s is None and div_s is None)
+        check("only-want-to-read user gets no personalized list (endpoint falls back)", personalized_recommend(solo, n=10) is None)
+        check("only-want-to-read user gets no diversity suggestions", diversity_suggestions(solo, n=5) == [])
 
     finally:
-        supabase.table("feedback").delete().eq("user_id", uid).execute()
-        supabase.table("reading_status").delete().eq("user_id", uid).execute()
-        supabase.auth.admin.delete_user(uid)
-        print(" (temporary test user removed)")
+        for u in (uid, solo):
+            supabase.table("feedback").delete().eq("user_id", u).execute()
+            supabase.table("reading_status").delete().eq("user_id", u).execute()
+            supabase.table("user_centroids").delete().eq("user_id", u).execute()
+            supabase.auth.admin.delete_user(u)
+        print(" (temporary test users removed)")
 
     failures = results.count(False)
     print(f"\n{'PASS' if failures == 0 else 'FAIL'}: {failures} mismatches")
