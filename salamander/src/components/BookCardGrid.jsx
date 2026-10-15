@@ -14,7 +14,7 @@ function Cover({ url, title }) {
     return <img src={url} alt={title} onError={() => setFailed(true)} style={{ height: '180px' }} />
 }
 
-function BookCardGrid({ books, userId }) {
+function BookCardGrid({ books, userId, onStatusChange }) {
     return (
         <div
             style={{
@@ -27,15 +27,21 @@ function BookCardGrid({ books, userId }) {
             }}
         >
             {books.map((book) => (
-                <div key={book.id || book.isbn} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <div 
+                    key={book.id || book.isbn} 
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+                    onChange={(e) => {
+                        if (e.target.tagName === 'SELECT') onStatusChange?.(book, e.target.value)
+                    }}
+                >
                     <Cover url={book.cover_url} title={book.title} />
                     <div><strong>{book.title}</strong></div>
                     <div>{book.author}</div>
                     <p style={{ fontSize: '0.9em', color: '#666' }}>{book.explanation}</p>
                     {book.id && (
                         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: 'auto' }}>
-                            <VoteControls userId={userId} bookId={book.id} />
-                            <StatusSelector userId={userId} bookId={book.id} />
+                            <VoteControls userId={userId} bookId={book.id} initialVote={book.vote} />
+                            <StatusSelector userId={userId} bookId={book.id} initialStatus={book.status} />
                         </div>
                     )}
                 </div>

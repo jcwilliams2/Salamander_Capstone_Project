@@ -4,7 +4,8 @@ import { EXPLORE_LEVELS } from './lib/exploreLevels'
 import Signup from './components/Signup'
 import Login from './components/Login'
 import Onboarding from './components/Onboarding'
-import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
+import { Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
+import WantToReadPage from './components/WantToReadPage'
 import CatalogPage from './components/CatalogPage'
 import BookCardGrid from './components/BookCardGrid'
 import DiversityPicks from './components/DiversityPicks'
@@ -21,6 +22,7 @@ function App() {
   const [recommendations, setRecommendations] = useState([])
   const [explore, setExplore] = useState(0)
   const requestId = useRef(0)
+  const onHome = useLocation().pathname === '/'
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -51,18 +53,19 @@ function App() {
   }, [session])
 
   useEffect(() => {
-    if (!session || !onboardingComplete || recommendations.length > 0) return
+    if (!session || !onboardingComplete || !onHome) return
 
-    fetch(`http://localhost:8000/recommendations/personalized/${session.user.id}`)
+    const mine = ++requestId.current
+    fetch(`http://localhost:8000/recommendations/personalized/${session.user.id}?explore=${EXPLORE_LEVELS[explore].value}`)
       .then(async (res) => {
         const data = await res.json().catch(() => null)
         if (!res.ok || !Array.isArray(data?.recommendations)) {
           throw new Error(`Unexpected response (${res.status})`)
         }
-        setRecommendations(data.recommendations)
+        if (mine === requestId.current) setRecommendations(data.recommendations)
       })
       .catch((err) => console.error('Failed to load recommendations', err))
-  }, [session, onboardingComplete, recommendations.length])
+  }, [session, onboardingComplete, onHome])
 
   function handleOnboardingComplete(recs) {
     setRecommendations(recs)
@@ -81,6 +84,12 @@ function App() {
         if (mine === requestId.current) setRecommendations(data.recommendations)
       })
       .catch((err) => console.error('Failed to update recommendations', err))
+  }
+
+  function handleRecommendationStatusChange(book, status) {
+    if (status === 'want_to_read') {
+      setRecommendations((prev) => prev.filter((b) => b.id !== book.id))
+    }
   }
 
   if (!session) {
@@ -105,6 +114,7 @@ function App() {
           <strong>Salamander</strong>
           <NavLink to="/" end style={navStyle}>Recommendations</NavLink>
           <NavLink to="/catalog" style={navStyle}>Catalog</NavLink>
+          <NavLink to="/want-to-read" style={navStyle}>Want to Read</NavLink>
           <span>{session.user.email}</span>
           <button onClick={() => supabase.auth.signOut()}>Log out</button>
         </nav>
@@ -118,12 +128,13 @@ function App() {
                 {recommendations.some((b) => b.id) && (
                   <ExplorationControl level={explore} onChange={handleExploreChange} />
                 )}
-                <BookCardGrid books={recommendations} userId={session.user.id} />
+                <BookCardGrid books={recommendations} userId={session.user.id} onStatusChange={handleRecommendationStatusChange} />
                 <DiversityPicks userId={session.user.id} />
               </div>
             }
           />
           <Route path="/catalog" element={<CatalogPage userId={session.user.id} />} />
+          <Route path='/want-to-read' element={<WantToReadPage userId={session.user.id} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
