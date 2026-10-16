@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from 'recharts'
 
 const API = 'http://localhost:8000'
+const RECENT_PLACEMENT = 'top'
 
 const BAR = '#2a78d6'
 const INK = '#0b0b0b'
@@ -10,6 +11,67 @@ const GRID = '#e6e5e1'
 
 const axisTick = { fill: INK_2, fontSize: 12 }
 const hoverCursor = { fill: 'rgba(0, 0, 0, 0.05)' }
+
+function RecentCover({ url, title }) {
+    const [failed, setFailed] = useState(false)
+    if (!url || failed) {
+        return (
+            <div style={{ height: '180px', width: '120px', border: `1px solid ${GRID}`, borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: INK_2, fontSize: '0.85em' }}>
+                No cover
+            </div>
+        )
+    }
+    return (
+        <img
+            src={url}
+            alt={title}
+            onError={() => setFailed(true)}
+            style={{ height: '180px', width: '120px', objectFit: 'cover', borderRadius: '4px', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)' }}
+        />
+    )
+}
+
+function RecentReads({ userId }) {
+    const [books, setBooks] = useState([])
+
+    useEffect(() => {
+        const controller = new AbortController()
+        fetch(`${API}/recent-finished/${userId}?limit=3`, { signal: controller.signal })
+            .then((res) => {
+                if (!res.ok) throw new Error(`Unexpected response (${res.status})`)
+                    return res.json()
+            })
+            .then((data) => setBooks(Array.isArray(data?.books) ? data.books : []))
+            .catch((err) => {
+                if (err.name === 'AbortError') return
+                console.error('Failed to load recent reads', err)
+                setBooks([])
+            })
+        return () => controller.abort()
+    }, [userId])
+
+    if (books.length === 0) return null
+
+    return (
+        <section style={{ maxWidth: '720px', margin: '24px auto 0', textAlign: 'center' }}>
+            <h3 style={{ margin: 0 }}>Recently finished</h3>
+            <div style={{ display: 'flex', gap: '28px', justifyContent: 'center', flexWrap: 'wrap', marginTop: '16px' }}>
+                {books.map((b) => (
+                    <div key={b.id} style={{ width: '140px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center' }}>
+                            <RecentCover url={b.cover_url} title={b.title} />
+                        </div>
+                        <div style={{ marginTop: '8px', fontWeight: 600, color: INK, fontSize: '0.9em' }}>{b.title}</div>
+                        <div style={{ color: INK_2, fontSize: '0.85em' }}>{b.author}</div>
+                        <div style={{ color: INK_2, fontSize: '0.8em' }}>
+                            {new Date(b.finished_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </section>
+    )
+}
 
 function monthName(year, month) {
     return new Date(year, month, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })
@@ -174,6 +236,7 @@ function ReadingDashboard({ userId }) {
                 <p>No reading history yet. Set a book's status from Recommendations or the Catalog and your stats will show up here.</p>
             ) : (
                 <>
+                    {RECENT_PLACEMENT === 'top' && <RecentReads userId={userId} />}
                     <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
                         <Tile label="Finished" value={s.finished} />
                         <Tile label="Reading" value={s.reading} />
@@ -245,6 +308,7 @@ function ReadingDashboard({ userId }) {
                             rows={tableRows}
                         />
                     </ChartSection>
+                    {RECENT_PLACEMENT === 'bottom' && <RecentReads userId={userId} />}
                 </>
             )}
         </div>

@@ -114,6 +114,32 @@ def reading_stats(user_id: str):
         "finished_at": finished_at,
     }
 
+@app.get("/recent-finished/{user_id}")
+def recent_finished(user_id: str, limit: int = 3):
+    limit = max(1, min(limit, 12))
+    rows = (supabase.table("reading_status")
+            .select("book_id, finished_at")
+            .eq("user_id", user_id)
+            .eq("status", "finished")
+            .not_.is_("finished_at", "null")
+            .order("finished_at", desc=True)
+            .limit(limit)
+            .execute()
+            .data
+    )
+    if not rows:
+        return {"books": []}
+    ids = [r["book_id"] for r in rows]
+    books = supabase.table("books").select("id, title, author, cover_url").in_("id", ids).execute().data
+    by_id = {b["id"]: b for b in books}
+    return {
+        "books": [
+            {**by_id[r["book_id"]], "finished_at": r["finished_at"]}
+            for r in rows
+            if r["book_id"] in by_id
+        ]
+    }
+
 @app.get("/want-to-read/{user_id}")
 def want_to_read_list(user_id: str):
     rows = (supabase.table("reading_status").select("book_id, updated_at")
