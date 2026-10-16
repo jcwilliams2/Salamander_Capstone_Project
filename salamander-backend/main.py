@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime, timezone
+from collections import Counter
 from recommend import (zero_history_recommend, build_genre_centroids, 
                         get_current_bestsellers_with_covers, 
                         no_preference_fallback, 
@@ -83,6 +84,35 @@ def update_reading_status(request: ReadingStatusRequest):
     supabase.table("reading_status").upsert(row, on_conflict="user_id,book_id").execute()
     invalidate_user_centroids(request.user_id)
     return {"success": True}
+
+@app.get("/reading-stats/{user_id}")
+def reading_stats(user_id: str):
+    rows = supabase.table("reading_status").select("book_id, status, finished_at").eq("user_id", user_id).execute().data
+    status_counts = Counter(r["status"] for r in rows)
+
+    votes = supabase.table("feedback").select("vote").eq("user_id", user_id).execute().data
+    vote_counts = Counter(v["vote"] for v in votes)
+
+    history_ids = [r["book_id"] for r in rows if r["status"] in ("finished", "reading", "dnf")]
+    genre_counts = Counter()
+    for i in range(0, len(history_ids), 100):
+        chunk = history_ids[i:i + 100]
+        books = supabase.table("books").select("genre_tags").in_("id", chunk).execute().data
+        for b in books:
+            for g in b.get("genre_tags") or []:
+                genre_counts[g] += 1
+
+    finished_at = sorted(
+        r["finished_at"] for r in rows
+        if r["status"] == "finished" and r.get("finished_at")
+    )
+    
+    return {
+        "status_counts": {s: status_counts.get(s, 0) for s in ("finished", "reading", "dnf", "want_to_read")},
+        "vote_counts": {"up": vote_counts.get(1, 0), "down": vote_counts.get(-1, 0)},
+        "genres": [{"genre": g, "count": c} for g, c in genre_counts.most_common(8)],
+        "finished_at": finished_at,
+    }
 
 @app.get("/want-to-read/{user_id}")
 def want_to_read_list(user_id: str):

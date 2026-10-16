@@ -10,6 +10,7 @@ import CatalogPage from './components/CatalogPage'
 import BookCardGrid from './components/BookCardGrid'
 import DiversityPicks from './components/DiversityPicks'
 import ExplorationControl from './components/ExplorationControl'
+import ReadingDashboard from './components/ReadingDashboard'
 import './App.css'
 
 const navStyle = ({ isActive }) => ({ fontWeight: isActive ? 'bold' : 'normal'})
@@ -115,6 +116,7 @@ function App() {
           <NavLink to="/" end style={navStyle}>Recommendations</NavLink>
           <NavLink to="/catalog" style={navStyle}>Catalog</NavLink>
           <NavLink to="/want-to-read" style={navStyle}>Want to Read</NavLink>
+          <NavLink to="/history" style={navStyle}>Reading History</NavLink>
           <span>{session.user.email}</span>
           <button onClick={() => supabase.auth.signOut()}>Log out</button>
         </nav>
@@ -134,7 +136,8 @@ function App() {
             }
           />
           <Route path="/catalog" element={<CatalogPage userId={session.user.id} />} />
-          <Route path='/want-to-read' element={<WantToReadPage userId={session.user.id} />} />
+          <Route path="/want-to-read" element={<WantToReadPage userId={session.user.id} />} />
+          <Route path="/history" element={<ReadingDashboard userId={session.user.id} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
