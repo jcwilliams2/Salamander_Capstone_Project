@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime, timezone
 from collections import Counter
+from collaborative import recommend_with_strategy
 from recommend import (zero_history_recommend, build_genre_centroids, 
                         get_current_bestsellers_with_covers, 
                         no_preference_fallback, 
@@ -182,8 +183,8 @@ def mark_onboarding_complete(request: CompleteOnboardingRequest):
     return {"success": True}
 
 @app.get("/recommendations/personalized/{user_id}")
-def get_personalized_feed(user_id: str, explore: float = 0.0):
-    recs = personalized_recommend(user_id, n=12, explore=explore)
+def get_personalized_feed(user_id: str, explore: float = 0.0, strategy: str = "hybrid"):
+    recs = recommend_with_strategy(user_id, n=12, explore=explore, strategy=strategy)
     if not recs:
         recs = no_preference_fallback(15)
     return {"recommendations": recs}
