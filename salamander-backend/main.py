@@ -9,7 +9,8 @@ from recommend import (zero_history_recommend, build_genre_centroids,
                         no_preference_fallback, 
                         personalized_recommend, invalidate_user_centroids,
                         diversity_suggestions)
-from search import search_catalog, browse_catalog, attach_user_state
+from search import (search_catalog, browse_catalog, attach_user_state,
+                    filter_catalog, list_genres)
 from supabase_client import supabase
 
 app = FastAPI()
@@ -202,3 +203,13 @@ def catalog_browse(page: int = 1, page_size: int = 24, user_id: str | None = Non
     page_size = min(max(page_size, 1), 60)
     books, total = browse_catalog(page, page_size)
     return {"results": attach_user_state(books, user_id), "page": max(page, 1), "total": total}
+
+@app.get("/catalog/filter")
+def catalog_filter(genres: str, q: str = "", page: int = 1, page_size: int = 24, user_id: str | None = None):
+    page, page_size = max(page, 1), min(max(page_size, 1), 60)
+    books, total = filter_catalog(q, genres, page, page_size)
+    return {"results": attach_user_state(books, user_id), "page": page, "total": total}
+
+@app.get("/catalog/genres")
+def catalog_genres():
+    return {"genres": list_genres()}
