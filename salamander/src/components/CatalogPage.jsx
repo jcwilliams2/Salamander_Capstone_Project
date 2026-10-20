@@ -95,6 +95,72 @@ function GenreChips({ options, selected, onToggle, onClear }) {
     )
 }
 
+function RequestPrompt({ query, userId, onAdded }) {
+    const [state, setState] = useState({ phase: 'looking', candidate: null, message: '' })
+
+    useEffect(() => {
+        const controller = new AbortController()
+        fetch(`${API}/catalog/lookup?q=${encodeURIComponent(query)}`, { signal: controller.signal })
+            .then((res) => res.json())
+            .then((data) => 
+                setState({ phase: data.candidate ? 'found' : 'none', candidate: data.candidate || null, message: '' })
+            )
+            .catch((err) => {
+                if (err.name === 'AbortError') return
+                console.error('Catalog lookup failed', err)
+                setState({ phase: 'none', candidate: null, message: '' })
+            })
+        return () => controller.abort()
+    }, [query])
+
+    function confirm() {
+        setState((prev) => ({ ...prev, phase: 'adding' }))
+        fetch(`${API}/catalog/request`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, isbn: state.candidate.isbn }),
+        })
+            .then(async (res) => {
+                const data = await res.json().catch(() => ({}))
+                if (!res.ok) throw new Error(data.detail || 'Request failed')
+                return data
+            })
+            .then((data) => {
+                if (data.status === 'added' || data.status === 'exists') {
+                    setState((prev) => ({ ...prev, phase: 'added' }))
+                    onAdded(data.book?.title)
+                } else {
+                    setState((prev) => ({ ...prev, phase: 'failed', message: data.message || "We couldn't add that book." }))
+                }
+            })
+            .catch((err) => setState((prev) => ({ ...prev, phase: 'failed', message: err.message })))
+    }
+
+    const { phase, candidate, message } = state
+    if (phase === 'none' || phase === 'dismissed') return null
+    if (phase === 'looking') return <p style={{ fontStyle: 'italic' }}>Checking other sources...</p>
+
+    return (
+        <div style={{ border: '1px solid #999', borderRadius: '8px', padding: '16px', maxWidth: '420px', margin: '16px auto', textAlign: 'center' }}>
+            <p>
+                This book isn't in the Salamander catalog yet. We found a match elsewhere. Would you like to add it?
+            </p>
+            <Cover url={candidate.cover_url} title={candidate.title} />
+            <div><strong>{candidate.title}</strong></div>
+            <div>{candidate.author}</div>
+            {phase === 'adding' && <p>Adding this book. It can take a few seconds...</p>}
+            {phase === 'added' && <p>Added. Updating your results...</p>}
+            {phase === 'failed' && <p style={{ color: 'red' }}>{message}</p>}
+            {(phase === 'found' || phase === 'failed') && (
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '12px' }}>
+                    <button type="button" onClick={confirm}>{phase === 'failed' ? 'Try again' : 'Add to catalog'}</button>
+                    <button type="button" onClick={() => setState((prev) => ({ ...prev, phase: 'dismissed' }))}>No thanks</button>
+                </div>
+            )}
+        </div>
+    )
+}
+
 function CatalogPage({ userId }) {
     const [query, setQuery] = useState('')
     const [search, setSearch] = useState({ q: '', items: [], failed: false })
@@ -103,6 +169,7 @@ function CatalogPage({ userId }) {
     const [genreOptions, setGenreOptions] = useState([])
     const [selected, setSelected] = useState([])
     const [filtered, setFiltered] = useState({ key: '', items: [], total: 0, failed: false })
+    const [refresh, setRefresh] = useState(0)
 
     const trimmed = query.trim()
     const searching = trimmed.length >= 2
@@ -142,7 +209,7 @@ function CatalogPage({ userId }) {
             clearTimeout(timer)
             controller.abort()
         }
-    },[trimmed, userId, filtering])
+    }, [trimmed, userId, filtering, refresh])
 
     useEffect(() => {
         if (!filtering) return
@@ -248,7 +315,17 @@ function CatalogPage({ userId }) {
                 <>
                     {!searchReady && <p>Searching...</p>}
                     {searchReady && search.failed && <p style={{ color: 'red' }}>Search failed. Please try again.</p>}
-                    {searchReady && !search.failed && search.items.length === 0 && <p>No books found for "{trimmed}".</p>}
+                    {searchReady && !search.failed && search.items.length === 0 && (
+                        <>
+                            <p>No books found for "{trimmed}".</p>
+                            <RequestPrompt
+                                key={trimmed}
+                                query={trimmed}
+                                userId={userId}
+                                onAdded={(title) => { if (title) setQuery(title); setRefresh((r) => r + 1) }}
+                            />
+                        </>
+                    )}
                     {searchReady && !search.failed && <BookGrid books={search.items} userId={userId} />}
                 </>
             ) : (
