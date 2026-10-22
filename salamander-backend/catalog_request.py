@@ -5,7 +5,7 @@ import threading
 import requests
 import unicodedata
 
-from ingest import HEADERS, ISBNDB_HEADERS, get_book_metadata, insert_book, is_duplicate_work
+from ingest import HEADERS, ISBNDB_HEADERS, get_book_metadata, insert_book, is_duplicate_work, authors_overlap
 from names import flip_name
 from search import _search_tokens
 from supabase_client import supabase
@@ -14,6 +14,7 @@ MAX_REQUESTS_PER_HOUR = 5
 LOOKUP_CACHE_SECONDS = 3600
 LOOKUP_CACHE_MAX = 200
 CANDIDATES_PER_SOURCE = 8
+MAX_CANDIDATES = 5
 
 _lookup_cache = {}
 _requests_by_user = {}
@@ -135,32 +136,46 @@ def _search_google_books(q):
         })
     return out
 
-def find_external_match(q):
+def _same_work(a, b):
+    if _fold(a["title"]).strip() != _fold(b["title"]).strip():
+        return False
+    if not a.get("author") or not b.get("author"):
+        return True
+    return authors_overlap(a["author"], b["author"])
+
+def find_external_matches(q):
     tokens = _search_tokens(q)
     if not tokens:
-        return None
+        return []
     phrase = " ".join(tokens)
 
     cached = _lookup_cache.get(phrase)
     if cached and cached[0] > time.time():
         return cached[1]
 
-    candidate = None
+    found = []
     for search in (_search_open_library, _search_isbndb, _search_google_books):
         for c in search(phrase):
             if not c.get("title") or not _matches(tokens, c["title"], c["author"]):
                 continue
+            if any(_same_work(c, f) for f in found):
+                continue
             if _isbn_in_catalog(c["isbn"]) or is_duplicate_work(c["title"], c["author"]):
                 continue
-            candidate = c
-            break
-        if candidate:
+            found.append(c)
+            if len(found) >= MAX_CANDIDATES:
+                break
+        if len(found) >= MAX_CANDIDATES:
             break
 
     if len(_lookup_cache) >= LOOKUP_CACHE_MAX:
         _lookup_cache.clear()
-    _lookup_cache[phrase] = (time.time() + LOOKUP_CACHE_SECONDS, candidate)
-    return candidate
+    _lookup_cache[phrase] = (time.time() + LOOKUP_CACHE_SECONDS, found)
+    return found
+
+def find_external_match(q):
+    matches = find_external_matches(q)
+    return matches[0] if matches else None
 
 def _check_rate_limit(user_id):
     now = time.time()
@@ -173,11 +188,13 @@ def _check_rate_limit(user_id):
 
 def add_requested_book(user_id, isbn):
     clean = clean_isbn(isbn)
-    if not user_id or not clean:
-        raise ValueError("A valid user and ISBN are required.")
+    if not user_id:
+        raise ValueError("A valid user is required.")
+    if not clean:
+        raise ValueError("That doesn't look like a valid ISBN. Enter 10 or 13 digits.")
     isbn13 = to_isbn13(clean)
 
-    existing = supabase.table("books").select("id, title").eq("isbn", isbn13).limit(1).execute().data
+    existing = supabase.table("books").select("id, title, author").eq("isbn", isbn13).limit(1).execute().data
     if existing:
         return {"status": "exists", "book": existing[0]}
 
@@ -242,6 +259,22 @@ if __name__ == "__main__":
     row = supabase.table("books").select("isbn, title, author").limit(1).execute().data[0]
     check("a catalog book is recognized by ISBN", _isbn_in_catalog(row["isbn"]))
     check("a catalog book is recognized by title and author", is_duplicate_work(row["title"], row["author"]))
+
+    check("same title, different authors are different works",
+            not _same_work({"title": "Echo", "author": "Francesca Haig"}, {"title": "echo", "author": "Pam Muñoz Ryan"}))
+    check("same work with an extra co-author is one work",
+            _same_work({"title": "Dune", "author": "Frank Herbert"}, {"title": "Dune", "author": "Frank Herbert, Brian Herbert"}))
+    check("same surname and initial but different first names are different authors",
+            not authors_overlap("John Smith", "Jane Smith"))
+    check("an initial matches a full first name", authors_overlap("J. K. Rowling", "Joanne Rowling"))
+    check("accents are folded in author names", authors_overlap("José Saramago", "Jose Saramago"))
+
+    try:
+        add_requested_book("u", "123")
+        msg = ""
+    except ValueError as e:
+        msg = str(e)
+    check("invalid ISBN gives a readable message", "ISBN" in msg)
 
     failures = results.count(False)
     print(f"\n{'PASS' if failures == 0 else 'FAIL'}: {failures} mismatches")

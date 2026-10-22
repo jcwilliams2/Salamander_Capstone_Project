@@ -11,7 +11,7 @@ from recommend import (zero_history_recommend, build_genre_centroids,
                         diversity_suggestions)
 from search import (search_catalog, browse_catalog, attach_user_state,
                     filter_catalog, list_genres)
-from catalog_request import find_external_match, add_requested_book, RequestLimitError
+from catalog_request import find_external_matches, add_requested_book, RequestLimitError
 from supabase_client import supabase
 
 app = FastAPI()
@@ -216,8 +216,9 @@ def catalog_genres():
     return {"genres": list_genres()}
 
 @app.get("/catalog/lookup")
-def catalog_lookup(q: str = ""):
-    return {"candidate": find_external_match(q)}
+def catalog_lookup(q: str):
+    matches = find_external_matches(q)
+    return {"candidates": matches, "candidate": matches[0] if matches else None}
 
 class CatalogRequest(BaseModel):
     user_id: str

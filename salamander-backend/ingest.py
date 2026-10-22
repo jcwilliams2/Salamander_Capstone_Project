@@ -3,6 +3,10 @@ import re
 import time
 import requests
 import html
+import json
+import math
+import unicodedata
+from collections import Counter
 from names import flip_name
 from langdetect import detect, LangDetectException
 from sentence_transformers import SentenceTransformer
@@ -15,14 +19,16 @@ GENRE_KEYWORD_MAP = {
     "mystery": "mystery",
     "thriller": "thriller",
     "suspense": "thriller",
+    "true crime": "true crime",
     "crime fiction": "crime fiction",
     "crime": "crime fiction",
     "romance": "romance",
     "horror": "horror",
     "historical fiction": "historical fiction",
     "literary fiction": "literary fiction",
-    "biography": "biography",
     "autobiography": "autobiography",
+    "biography": "biography",
+    "biographies": "biography",
     "memoir": "memoir",
     "young adult": "young adult",
     "juvenile fiction": "childrens",
@@ -30,6 +36,7 @@ GENRE_KEYWORD_MAP = {
     "middle grade": "childrens",
     "children": "childrens",
     "poetry": "poetry",
+    "short stories": "short stories",
     "graphic novel": "graphic novel",
     "comic": "graphic novel",
     "self-help": "self help",
@@ -43,12 +50,12 @@ GENRE_KEYWORD_MAP = {
     "social science": "social science",
     "sociology": "social science",
     "anthropology": "social science",
+    "political science": "politics",
     "science": "science",
     "philosophy": "philosophy",
     "religion": "religion",
     "business": "business",
     "economics": "business",
-    "true crime": "true crime",
     "humor": "humor",
     "comedy": "humor",
     "cooking": "cooking",
@@ -56,13 +63,28 @@ GENRE_KEYWORD_MAP = {
     "psychology": "psychology",
     "politics": "politics",
     "sports": "sports",
+    "adventure": "adventure",
     "nonfiction": "nonfiction",
     "fiction": "fiction",
 }
 
+MIN_SUPPORT = 2
+SMALL_SUBJECT_LIST = 8
+NOISY_GENRES = {"art", "history", "science", "religion", "fiction", "nonfiction", "politics",
+                "philosophy", "psychology", "business", "sports", "travel", "humor",
+                "social science", "self help", "adventure", "historical fiction", "literary fiction",
+                "autobiography"}
+FICTION_HEADING_MAP = {"historical": "historical fiction", "literary": "literary fiction"}
+IGNORED_SUBJECT = re.compile(r"history and criticism|criticism and interpretation|early works to|reading level|large type")
+NON_ART_CONTEXT = re.compile(r"militar|martial|performing art|\bin art\b|art museum")
+CLASSICS_SUBJECTS = {"classics", "classic literature", "classic fiction", "literary classics"}
+STRICT_GENRES = {"classics", "short stories"}
+NO_RESCUE = STRICT_GENRES | {"adventure"}
+
 HEADERS = {"User-Agent": "Salamander-Capstone-Project/1.0 (jcwilliams14@student.fullsail.edu)"}
 ISBNDB_HEADERS = {"Authorization": os.environ["ISBNDB_API_KEY"]}
 MIN_DESCRIPTION_LENGTH = 50
+DUPLICATE_MIN_SIMILARITY = 0.4
 
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
@@ -98,26 +120,72 @@ def is_english(text):
     except LangDetectException:
         return False
 
+def _match_piece(cleaned):
+    if re.search(r"biography\s*autobiography", cleaned):
+        return "biography"
+    if cleaned in CLASSICS_SUBJECTS:
+        return "classics"
+    for keyword, canonical in GENRE_KEYWORD_MAP.items():
+        if keyword in cleaned:
+            return canonical
+    if re.search(r"\bart\b", cleaned) and not NON_ART_CONTEXT.search(cleaned):
+        return "art"
+    return None
+
+def genre_support(raw_tags):
+    support = Counter()
+    for tag in raw_tags or []:
+        if not tag:
+            continue
+        fiction_heading = tag.strip().lower().startswith("fiction")
+        matches = set()
+        for piece in re.split(r"[,/]", tag):
+            cleaned = re.sub(r"[^a-z\s-]", "", piece.lower()).strip()
+            if not cleaned or IGNORED_SUBJECT.search(cleaned):
+                continue
+            genre = _match_piece(cleaned)
+            if not genre and fiction_heading:
+                genre = FICTION_HEADING_MAP.get(cleaned)
+            if genre:
+                matches.add(genre)
+        if len(matches) >= 3:
+            continue
+        for genre in matches:
+            support[genre] += 1
+    return support
+
+def genre_threshold(genre, subject_count):
+    if genre in STRICT_GENRES and subject_count >= SMALL_SUBJECT_LIST:
+        return MIN_SUPPORT
+    if subject_count < SMALL_SUBJECT_LIST or genre not in NOISY_GENRES:
+        return 1
+    return MIN_SUPPORT
+
+def exact_genres(raw_tags):
+    out = set()
+    for raw in raw_tags:
+        whole = (raw or "").lower().strip()
+        if whole.startswith("fiction"):
+            out.add("fiction")
+        for label in (whole, whole.split("/")[0].strip()):
+            g = GENRE_KEYWORD_MAP.get(label)
+            if g and label.replace("-", " ") == g:
+                out.add(g)
+    return out
+
 def normalize_genre_tags(raw_tags):
     if not raw_tags:
         return []
-    normalized = set()
-    for tag in raw_tags:
-        if not tag:
-            continue
-        tag_matches = set()
-        for piece in re.split(r"[,/]", tag):
-            cleaned = re.sub(r"[^a-z\s-]", "", piece.lower()).strip()
-            if not cleaned:
-                continue
-            for keyword, canonical in GENRE_KEYWORD_MAP.items():
-                if keyword in cleaned:
-                    tag_matches.add(canonical)
-                    break
-        if len(tag_matches) >= 3:
-            continue
-        normalized.update(tag_matches)
-    return sorted(normalized)
+    support = genre_support(raw_tags)
+    n = len(raw_tags)
+    exact = exact_genres(raw_tags)
+    kept = [g for g, c in support.items()
+            if c >= genre_threshold(g, n) or (g in exact and g not in NO_RESCUE)]
+    if not kept and support:
+        top = max(support.values())
+        kept = sorted(g for g, c in support.items()
+                        if c == top and g not in NO_RESCUE)[:3]
+    return sorted(kept)
 
 def fetch_isbndb_metadata(isbn):
     resp = requests.get(
@@ -335,17 +403,64 @@ def _author_key(author):
 def _escape_like(text):
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
-def is_duplicate_work(title, author):
-    key = _author_key(author)
-    if not key:
+def _fold_name(text):
+    return "".join(c for c in unicodedata.normalize("NFKD", text or "") if not unicodedata.combining(c)).lower()
+
+def _author_names(author):
+    names = []
+    for part in (author or "").split(","):
+        tokens = re.sub(r"[^a-z\s]", "", re.sub(r"[.\-]", " ", _fold_name(part))).split()
+        if tokens:
+            names.append((tokens[0] if len(tokens) > 1 else "", tokens[-1]))
+    return names
+
+def _given_compatible(a, b):
+    if not a or not b or a == b:
+        return True
+    return (len(a) == 1 and b.startswith(a)) or (len(b) == 1 and a.startswith(b))
+
+def authors_overlap(author_a, author_b):
+    for ga, sa in _author_names(author_a):
+        for gb, sb in _author_names(author_b):
+            if sa == sb and _given_compatible(ga, gb):
+                return True
+
+    return False
+
+def _cosine(a, b):
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(x * x for x in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+def _as_vector(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return None
+    return value if isinstance(value, list) and value else None
+
+def is_duplicate_work(title, author, embedding=None):
+    if not _author_names(author):
         return False
-    rows = supabase.table("books").select("id, author").ilike("title", _escape_like(title.strip())).execute().data
-    return any(_author_key(r.get("author")) == key for r in rows)
+    rows = supabase.table("books").select("id, author, embedding").ilike("title", _escape_like(title.strip())).execute().data
+    for r in rows:
+        if not authors_overlap(author, r.get("author")):
+            continue
+        stored = _as_vector(r.get("embedding"))
+        if embedding is None or stored is None:
+            return True
+        if _cosine(embedding, stored) >= DUPLICATE_MIN_SIMILARITY:
+            return True
+    return False
 
 def insert_book(book_data):
     if not book_data or not book_data.get("title"):
         return None
-    if is_duplicate_work(book_data["title"], book_data.get("author")):
+    if is_duplicate_work(book_data["title"], book_data.get("author"), book_data.get("embedding")):
         print(f" Skipping duplicate edition: {book_data['title']} ({book_data.get('author')})")
         return "duplicate"
     try:

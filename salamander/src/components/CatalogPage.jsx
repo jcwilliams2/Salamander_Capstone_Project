@@ -95,30 +95,96 @@ function GenreChips({ options, selected, onToggle, onClear }) {
     )
 }
 
-function RequestPrompt({ query, userId, onAdded }) {
-    const [state, setState] = useState({ phase: 'looking', candidate: null, message: '' })
+function IsbnForm({ userId, onAdded }) {
+    const [value, setValue] = useState('')
+    const [state, setState] = useState({ phase: 'idle', message: '' })
 
-    useEffect(() => {
-        const controller = new AbortController()
-        fetch(`${API}/catalog/lookup?q=${encodeURIComponent(query)}`, { signal: controller.signal })
-            .then((res) => res.json())
-            .then((data) => 
-                setState({ phase: data.candidate ? 'found' : 'none', candidate: data.candidate || null, message: '' })
-            )
-            .catch((err) => {
-                if (err.name === 'AbortError') return
-                console.error('Catalog lookup failed', err)
-                setState({ phase: 'none', candidate: null, message: '' })
-            })
-        return () => controller.abort()
-    }, [query])
-
-    function confirm() {
-        setState((prev) => ({ ...prev, phase: 'adding' }))
+    function submit(e) {
+        e.preventDefault()
+        const isbn = value.trim()
+        if (!isbn || state.phase === 'adding') return
+        setState({ phase: 'adding', message: '' })
         fetch(`${API}/catalog/request`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, isbn: state.candidate.isbn }),
+            body: JSON.stringify({ user_id: userId, isbn }),
+        })
+            .then(async (res) => {
+                const data = await res.json().catch(() => ({}))
+                if (!res.ok) throw new Error(data.detail || 'Request failed')
+                return data
+            })
+            .then((data) => {
+                if (data.status === 'added' || data.status === 'exists') {
+                    setState({ phase: 'added', message: '' })
+                    onAdded(data.book?.title)
+                } else {
+                    setState({ phase: 'failed', message: data.message || "We couldn't add that book." })
+                }
+            })
+            .catch((err) => setState({ phase: 'failed', message: err.message }))
+    }
+
+    return (
+        <form onSubmit={submit} style={{ margin: '12px 0' }}>
+            <label>
+                Know the ISBN? {' '}
+                <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="10 or 13 digits"
+                    aria-label="ISBN"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    style={{ padding: '4px 8px', marginRight: '8px' }}
+                />
+            </label>
+            <button type="submit" disabled={!value.trim() || state.phase === 'adding' || state.phase === 'added'}>
+                {state.phase === 'adding' ? 'Adding...' : 'Add by ISBN'}
+            </button>
+            {state.phase === 'adding' && <p>Adding this book. It can take a few seconds...</p>}
+            {state.phase === 'added' && <p>Added. Updating your results...</p>}
+            {state.phase === 'failed' && <p style={{ color: 'red' }}>{state.message}</p>}
+        </form>
+    )
+}
+
+function RequestPrompt({ query, userId, auto, onAdded }) {
+    const [state, setState] = useState({ phase: auto ? 'looking' : 'idle', candidates: [], busyIsbn: null, message: '' })
+
+    function fetchCandidates(signal) {
+        fetch(`${API}/catalog/lookup?q=${encodeURIComponent(query)}`, { signal })
+            .then((res) => res.json())
+            .then((data) => {
+                const list = Array.isArray(data.candidates) ? data.candidates : (data.candidate ? [data.candidate] : [])
+                setState({ phase: list.length ? 'found' : 'none', candidates: list, busyIsbn: null, message: '' })
+            })
+            .catch((err) => {
+                if (err.name === 'AbortError') return
+                console.error('Catalog lookup failed', err)
+                setState({ phase: 'none', candidates: [], busyIsbn: null, message: "We couldn't reach the other sources right now." })
+            })
+    }
+
+    function lookup() {
+        setState((prev) => ({ ...prev, phase: 'looking' }))
+        fetchCandidates()
+    }
+
+    useEffect(() => {
+        if (!auto) return
+        const controller = new AbortController()
+        fetchCandidates(controller.signal)
+        return () => controller.abort()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [query, auto])
+
+    function confirm(candidate) {
+        setState((prev) => ({ ...prev, phase: 'adding', busyIsbn: candidate.isbn, message: '' }))
+        fetch(`${API}/catalog/request`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, isbn: candidate.isbn }),
         })
             .then(async (res) => {
                 const data = await res.json().catch(() => ({}))
@@ -136,26 +202,61 @@ function RequestPrompt({ query, userId, onAdded }) {
             .catch((err) => setState((prev) => ({ ...prev, phase: 'failed', message: err.message })))
     }
 
-    const { phase, candidate, message } = state
-    if (phase === 'none' || phase === 'dismissed') return null
+    const { phase, candidates, busyIsbn, message } = state
+    if (phase === 'dismissed') return null
+    if (phase === 'idle') {
+        return (
+            <p style={{ margin: '16px 0' }}>
+                Not the book you wanted?{' '}
+                <button type="button" onClick={() => lookup()}>Check other sources</button>
+            </p>
+        )
+    }
     if (phase === 'looking') return <p style={{ fontStyle: 'italic' }}>Checking other sources...</p>
+    if (phase === 'none') {
+        return (
+            <div style={{ margin: '16px auto', maxWidth: '640px', textAlign: 'center' }}>
+                <p>
+                    {message || (auto
+                        ? `We checked other sources and didn't find a match for "${query}".`
+                        : 'No other matches found elsewhere.'
+                    )}
+                </p>
+                <IsbnForm userId={userId} onAdded={onAdded} />
+            </div>
+        )
+    }
 
     return (
-        <div style={{ border: '1px solid #999', borderRadius: '8px', padding: '16px', maxWidth: '420px', margin: '16px auto', textAlign: 'center' }}>
+        <div style={{ border: '1px solid #999', borderRadius: '8px', padding: '16px', maxWidth: '640px', margin: '16px auto', textAlign: 'center' }}>
             <p>
-                This book isn't in the Salamander catalog yet. We found a match elsewhere. Would you like to add it?
+                {auto
+                    ? "This book isn't in the Salamander catalog yet. We found matches elsewhere. Which one would you like to add?"
+                    : "We found other books matching your search that aren't in the catalog yet. Add the one you meant."}
             </p>
-            <Cover url={candidate.cover_url} title={candidate.title} />
-            <div><strong>{candidate.title}</strong></div>
-            <div>{candidate.author}</div>
+            <div style={{ display: 'flex', flexWrap: "wrap", gap: '16px', justifyContent: 'center' }}>
+                {candidates.map((c) => (
+                    <div key={c.isbn} style={{ width: '170px' }}>
+                        <Cover url={c.cover_url} title={c.title} />
+                        <div><strong>{c.title}</strong></div>
+                        <div>{c.author}</div>
+                        <button type="button" disabled={phase === 'adding' || phase === 'added'} onClick={() => confirm(c)}>
+                            {phase === 'adding' && busyIsbn === c.isbn ? 'Adding...' : 'Add to catalog'}
+                        </button>
+                    </div>
+                ))}
+            </div>
             {phase === 'adding' && <p>Adding this book. It can take a few seconds...</p>}
             {phase === 'added' && <p>Added. Updating your results...</p>}
             {phase === 'failed' && <p style={{ color: 'red' }}>{message}</p>}
+            <div style={{ marginTop: '16px' }}>
+                <p style={{ marginBottom: 0 }}>Still not the one?</p>
+                <IsbnForm userId={userId} onAdded={onAdded} />
+            </div>
             {(phase === 'found' || phase === 'failed') && (
-                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '12px' }}>
-                    <button type="button" onClick={confirm}>{phase === 'failed' ? 'Try again' : 'Add to catalog'}</button>
-                    <button type="button" onClick={() => setState((prev) => ({ ...prev, phase: 'dismissed' }))}>No thanks</button>
-                </div>
+                <button type="button" style={{ marginTop: '12px' }} onClick={() => setState((prev) => ({ ...prev, phase: 'dismissed' }))}>
+                    No thanks
+                </button>
             )}
         </div>
     )
@@ -245,6 +346,7 @@ function CatalogPage({ userId }) {
             clearTimeout(timer)
             controller.abort()
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filterKey, userId])
 
     useEffect(() => {
@@ -315,18 +417,17 @@ function CatalogPage({ userId }) {
                 <>
                     {!searchReady && <p>Searching...</p>}
                     {searchReady && search.failed && <p style={{ color: 'red' }}>Search failed. Please try again.</p>}
-                    {searchReady && !search.failed && search.items.length === 0 && (
-                        <>
-                            <p>No books found for "{trimmed}".</p>
-                            <RequestPrompt
-                                key={trimmed}
-                                query={trimmed}
-                                userId={userId}
-                                onAdded={(title) => { if (title) setQuery(title); setRefresh((r) => r + 1) }}
-                            />
-                        </>
-                    )}
+                    {searchReady && !search.failed && search.items.length === 0 && <p>No books found for "{trimmed}".</p>}
                     {searchReady && !search.failed && <BookGrid books={search.items} userId={userId} />}
+                    {searchReady && !search.failed && (
+                        <RequestPrompt
+                            key={`${trimmed}|${search.items.length === 0}`}
+                            query={trimmed}
+                            userId={userId}
+                            auto={search.items.length === 0}
+                            onAdded={(title) => { if (title) setQuery(title); setRefresh((r) => r + 1) }}
+                        />
+                    )}
                 </>
             ) : (
                 <>
