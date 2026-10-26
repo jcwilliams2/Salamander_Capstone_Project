@@ -1,11 +1,14 @@
-import { useState } from "react"
+import { useState, useRef } from "react"
+import HCaptcha from '@hcaptcha/react-hcaptcha'
 import { supabase } from "../lib/supabaseClient"
 
 function Signup ({ onSuccess, switchToLogin }) {
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [username, setUsername] = useState('')
+    const [captchaToken, setCaptchaToken] = useState(null)
     const [errorMessage, setErrorMessage] = useState('')
+    const captcha = useRef(null)
 
     async function handleSignup(e) {
         e.preventDefault()
@@ -30,8 +33,10 @@ function Signup ({ onSuccess, switchToLogin }) {
         const { data, error } = await supabase.auth.signUp({ 
             email, 
             password,
-            options: { data: { username } }
+            options: { data: { username }, captchaToken }
         })
+        captcha.current?.resetCaptcha()
+        setCaptchaToken(null)
 
         if (error) {
             if (error.message.includes('already registered')) {
@@ -70,7 +75,13 @@ function Signup ({ onSuccess, switchToLogin }) {
                 onChange={(e) => setPassword(e.target.value)}
                 required
             />
-            <button type="submit">Sign Up</button>
+            <HCaptcha
+                ref={captcha}
+                sitekey={import.meta.env.VITE_HCAPTCHA_SITEKEY}
+                onVerify={setCaptchaToken}
+                onExpire={() => setCaptchaToken(null)}
+            />
+            <button type="submit" disabled={!captchaToken}>Sign Up</button>
             <p>
                 Already have an account?{' '}
                 <button type="button" onClick={switchToLogin}>Log in</button>

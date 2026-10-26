@@ -1,3 +1,5 @@
+import os
+import secrets
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -8,7 +10,7 @@ from recommend import (zero_history_recommend, build_genre_centroids,
                         get_current_bestsellers_with_covers, 
                         no_preference_fallback, 
                         personalized_recommend, invalidate_user_centroids,
-                        diversity_suggestions)
+                        diversity_suggestions, genre_seed_recommend)
 from search import (search_catalog, browse_catalog, attach_user_state,
                     filter_catalog, list_genres)
 from catalog_request import find_external_matches, add_requested_book, RequestLimitError
@@ -18,7 +20,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[o for o in ["http://localhost:5173", os.environ.get("FRONTEND_ORIGIN")] if o],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -176,17 +178,99 @@ def check_onboarding_status(user_id: str):
 
 class CompleteOnboardingRequest(BaseModel):
     user_id: str
+    selected_genres: list[str] | None = None
 
 @app.post("/complete-onboarding")
 def mark_onboarding_complete(request: CompleteOnboardingRequest):
-    result = supabase.table("profiles").update({"onboarding_completed": True}).eq("id", request.user_id).execute()
+    update = {"onboarding_completed": True}
+    if request.selected_genres is not None:
+        update["onboarding_genres"] = request.selected_genres
+    result = supabase.table("profiles").update(update).eq("id", request.user_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="No profile found for this user")
     return {"success": True}
 
+STUDY_AUTO_EXPLORE = 0.35
+STUDY_PILOT = os.environ.get("STUDY_PILOT") == "1"
+
+def get_study_arm(user_id):
+    rows = supabase.table("participant_assignments").select("arm").eq("user_id", user_id).execute().data
+    return rows[0]["arm"] if rows else None
+
+def choose_arm():
+    if STUDY_PILOT:
+        arms = [r["arm"] for r in supabase.table("participant_assignments").select("arm").execute().data]
+        return "A" if arms.count("A") <= arms.count("B") else "B"
+    return secrets.choice(["A", "B"])
+
+@app.get("/study/arm/{user_id}")
+def study_arm(user_id: str):
+    arm = get_study_arm(user_id)
+    if not arm:
+        supabase.table("participant_assignments").upsert(
+            {"user_id": user_id, "arm": choose_arm()},
+            on_conflict="user_id",
+            ignore_duplicates=True,
+        ).execute()
+        arm = get_study_arm(user_id)
+    return {"arm": arm, "explore": STUDY_AUTO_EXPLORE}
+
+def genre_seed_feed(user_id, n, explore):
+    rows = supabase.table("profiles").select("onboarding_genres").eq("id", user_id).execute().data
+    genres = (rows[0].get("onboarding_genres") if rows else None) or []
+    if not genres:
+        return None
+    logged = [r["book_id"] for r in supabase.table("reading_status").select("book_id").eq("user_id", user_id).execute().data]
+    return genre_seed_recommend(genres, genre_centroids, n=n, explore=explore, exclude_ids=logged)
+
+STUDY_MIN_RATED = 10
+SURVEY_ITEM_IDS = ["r1", "r2", "r3", "n1", "n2", "n3", "d1", "d2", "d3", "d4", "s1", "s2", "s3", "attn"]
+
+def count_rated(user_id):
+    votes = {r["book_id"] for r in supabase.table("feedback").select("book_id").eq("user_id", user_id).execute().data}
+    statuses = {r["book_id"] for r in supabase.table("reading_status").select("book_id").eq("user_id", user_id).execute().data}
+    return len(votes | statuses)
+
+@app.get("/study/progress/{user_id}")
+def study_progress(user_id: str):
+    done = bool(supabase.table("survey_responses").select("user_id").eq("user_id", user_id).execute().data)
+    return {"rated": count_rated(user_id), "required": STUDY_MIN_RATED, "survey_done": done}
+
+class SurveyRequest(BaseModel):
+    user_id: str
+    answers: dict[str, int]
+
+@app.post("/study/survey")
+def submit_survey(request: SurveyRequest):
+    assigned = supabase.table("participant_assignments").select("assigned_at").eq("user_id", request.user_id).execute().data
+    if not assigned:
+        raise HTTPException(status_code=403, detail="Not a study participant.")
+    if set(request.answers) != set(SURVEY_ITEM_IDS) or any(not 1 <= v <= 5 for v in request.answers.values()):
+        raise HTTPException(status_code=400, detail="Please answer every question.")
+    if supabase.table("survey_responses").select("user_id").eq("user_id", request.user_id).execute().data:
+        raise HTTPException(status_code=409, detail="Your survey has already been submitted.")
+
+    started = datetime.fromisoformat(assigned[0]["assigned_at"].replace("Z", "+00:00"))
+    seconds = int((datetime.now(timezone.utc) - started).total_seconds())
+    try:
+        supabase.table("survey_responses").insert({
+            "user_id": request.user_id,
+            "answers": request.answers,
+            "attention_passed": request.answers["attn"] == 4,
+            "rated_count": count_rated(request.user_id),
+            "session_seconds": seconds,
+        }).execute()
+    except Exception:
+        raise HTTPException(status_code=409, detail="Your survey has already been submitted.")
+    return {"success": True}
+
 @app.get("/recommendations/personalized/{user_id}")
 def get_personalized_feed(user_id: str, explore: float = 0.0, strategy: str = "hybrid"):
+    if get_study_arm(user_id) == "A":
+        explore = STUDY_AUTO_EXPLORE
     recs = recommend_with_strategy(user_id, n=12, explore=explore, strategy=strategy)
+    if not recs:
+        recs = genre_seed_feed(user_id, n=12, explore=explore)
     if not recs:
         recs = no_preference_fallback(15)
     return {"recommendations": recs}

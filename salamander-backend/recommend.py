@@ -194,6 +194,24 @@ def zero_history_recommend(selected_genres=None, seed_books=None, genre_centroid
     else:
         return no_preference_fallback(n)
 
+def genre_seed_recommend(selected_genres, genre_centroids, n=10, explore=0.0, exclude_ids=None):
+    vectors = [genre_centroids[g] for g in selected_genres if g in genre_centroids]
+    if not vectors:
+        return None
+    seed = np.array(vectors, dtype=float).mean(axis=0)
+    explore = min(max(float(explore or 0.0), 0.0), 1.0)
+    pool = n * 6 if explore > 0 else n
+    candidates = query_similar_books(seed.tolist(), exclude_ids=exclude_ids, limit=pool)
+    if not candidates:
+        return None
+    candidates = explore_rerank(candidates, seed, None, n, explore)
+    for book in candidates:
+        book["explanation"] = explain_recommendation(
+            book, selected_genres=selected_genres, genre_centroids=genre_centroids
+        )
+        book.pop("embedding", None)
+    return candidates
+
 def popularity_baseline_recommend(n=10):
     result = supabase.table("books").select("id, title, author").order("created_at").limit(n).execute()
     return result.data

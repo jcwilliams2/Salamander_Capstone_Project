@@ -11,6 +11,8 @@ import BookCardGrid from './components/BookCardGrid'
 import DiversityPicks from './components/DiversityPicks'
 import ExplorationControl from './components/ExplorationControl'
 import ReadingDashboard from './components/ReadingDashboard'
+import StudyEntry from './components/StudyEntry'
+import SurveyPage from './components/SurveyPage'
 import './App.css'
 
 const navStyle = ({ isActive }) => ({ fontWeight: isActive ? 'bold' : 'normal'})
@@ -18,12 +20,18 @@ const navStyle = ({ isActive }) => ({ fontWeight: isActive ? 'bold' : 'normal'})
 function App() {
   const [session, setSession] = useState(null)
   const [showSignup, setShowSignup] = useState(true)
+  const [studyMode, setStudyMode] = useState(() => new URLSearchParams(window.location.search).has('study'))
   const [onboardingComplete, setOnboardingComplete] = useState(false)
   const [onboardingChecked, setOnboardingChecked] = useState(false)
   const [recommendations, setRecommendations] = useState([])
   const [explore, setExplore] = useState(0)
+  const [arm, setArm] = useState(null)
+  const [armChecked, setArmChecked] = useState(false)
   const requestId = useRef(0)
   const onHome = useLocation().pathname === '/'
+  const userId = session?.user.id
+  const isAnonymous = Boolean(session?.user.is_anonymous)
+  const armReady = !isAnonymous || armChecked
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -35,6 +43,8 @@ function App() {
         setOnboardingChecked(false)
         setRecommendations([])
         setExplore(0)
+        setArm(null)
+        setArmChecked(false)
       }
     })
 
@@ -54,7 +64,22 @@ function App() {
   }, [session])
 
   useEffect(() => {
-    if (!session || !onboardingComplete || !onHome) return
+    if (!userId || !isAnonymous) return
+
+    fetch(`http://localhost:8000/study/arm/${userId}`)
+      .then(async (res) => {
+        const data = await res.json().catch(() => null)
+        if (!res.ok || !data?.arm) throw new Error(`Unexpected response (${res.status})`)
+        const index = EXPLORE_LEVELS.findIndex((l) => l.value === data.explore)
+      setArm(data.arm)
+      setExplore(index >= 0 ? index: 0)
+      })
+      .catch((err) => console.error('Failed to get study arm', err))
+      .finally(() => setArmChecked(true))
+  }, [userId, isAnonymous])
+
+  useEffect(() => {
+    if (!session || !armReady || !onboardingComplete || !onHome) return
 
     const mine = ++requestId.current
     fetch(`http://localhost:8000/recommendations/personalized/${session.user.id}?explore=${EXPLORE_LEVELS[explore].value}`)
@@ -66,7 +91,7 @@ function App() {
         if (mine === requestId.current) setRecommendations(data.recommendations)
       })
       .catch((err) => console.error('Failed to load recommendations', err))
-  }, [session, onboardingComplete, onHome])
+  }, [session, armReady, onboardingComplete, onHome])
 
   function handleOnboardingComplete(recs) {
     setRecommendations(recs)
@@ -94,11 +119,29 @@ function App() {
   }
 
   if (!session) {
-    return showSignup ? (
-      <Signup onSuccess={() => {}} switchToLogin={() => setShowSignup(false)} />
-    ) : (
-      <Login onSuccess={() => {}} switchToSignup={() => setShowSignup(true)} />
+    if (studyMode) {
+      return <StudyEntry onStarted={() => {}} onLogin={() => setStudyMode(false)} />
+    }
+    return (
+      <div>
+        {showSignup ? (
+          <Signup onSuccess={() => {}} switchToLogin={() => setShowSignup(false)} />
+        ) : (
+          <Login onSuccess={() => {}} switchToSignup={() => setShowSignup(true)} />
+        )}
+        <p style={{ textAlign: 'center' }}>
+          <button type="button" onClick={() => setStudyMode(true)}>Take part in the study</button>
+        </p>
+      </div>
     )
+  }
+
+  if (!armReady) {
+    return <p>Loading...</p>
+  }
+
+  if (isAnonymous && !arm) {
+    return <p>We couldn't start your session. Please refresh the page and try again.</p>
   }
 
   if (!onboardingChecked) {
@@ -106,7 +149,7 @@ function App() {
   }
 
   if (!onboardingComplete) {
-    return <Onboarding userId={session.user.id} onComplete={handleOnboardingComplete} />
+    return <Onboarding userId={session.user.id} onComplete={handleOnboardingComplete} required={isAnonymous} />
   }
 
   return (
@@ -117,8 +160,9 @@ function App() {
           <NavLink to="/catalog" style={navStyle}>Catalog</NavLink>
           <NavLink to="/want-to-read" style={navStyle}>Want to Read</NavLink>
           <NavLink to="/history" style={navStyle}>Reading History</NavLink>
+          {isAnonymous && <NavLink to="/survey" style={navStyle}>Finish & take survey</NavLink>}
           <span>{session.user.email}</span>
-          <button onClick={() => supabase.auth.signOut()}>Log out</button>
+          {!session.user.is_anonymous && <button onClick={() => supabase.auth.signOut()}>Log out</button>}
         </nav>
         
         <Routes>
@@ -127,8 +171,14 @@ function App() {
             element={
               <div>
                 <h2>Your Recommendations</h2>
-                {recommendations.some((b) => b.id) && (
+                {recommendations.some((b) => b.id) && (!isAnonymous || arm === 'B') && (
                   <ExplorationControl level={explore} onChange={handleExploreChange} />
+                )}
+                {isAnonymous && (
+                  <p style={{ maxWidth: '640px', margin: '0 auto 16px', textAlign: 'center' }}>
+                    Browse your recommendations and mark at least 10 books using the vote buttons. When you're
+                    done, choose "Finish & take survey" in the menu.
+                  </p>
                 )}
                 <BookCardGrid books={recommendations} userId={session.user.id} onStatusChange={handleRecommendationStatusChange} />
                 <DiversityPicks userId={session.user.id} />
@@ -138,6 +188,7 @@ function App() {
           <Route path="/catalog" element={<CatalogPage userId={session.user.id} />} />
           <Route path="/want-to-read" element={<WantToReadPage userId={session.user.id} />} />
           <Route path="/history" element={<ReadingDashboard userId={session.user.id} />} />
+          <Route path="/survey" element={<SurveyPage userId={session.user.id} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

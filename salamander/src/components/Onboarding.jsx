@@ -9,7 +9,10 @@ const GENRE_OPTIONS = [
   'psychology', 'politics', 'sports', 'nonfiction', 'social science', 'art',
 ]
 
-function Onboarding({ userId, onComplete }) {
+const MIN_GENRES_STUDY = 3
+
+function Onboarding({ userId, onComplete, required = false }) {
+    const minGenres = required ? MIN_GENRES_STUDY : 1
     const [selectedGenres, setSelectedGenres] = useState([])
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
@@ -40,7 +43,7 @@ function Onboarding({ userId, onComplete }) {
             await fetch('http://localhost:8000/complete-onboarding', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_id: userId }),
+                body: JSON.stringify({ user_id: userId, selected_genres: selectedGenres }),
             })
 
             onComplete(data.recommendations)
@@ -68,7 +71,7 @@ function Onboarding({ userId, onComplete }) {
             await fetch('http://localhost:8000/complete-onboarding', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_id: userId }),
+                body: JSON.stringify({ user_id: userId, selected_genres: [] }),
             })
 
             onComplete(data.recommendations)
@@ -83,7 +86,10 @@ function Onboarding({ userId, onComplete }) {
     return (
         <div>
             <h2>What do you like to read?</h2>
-            <p>Pick a few genres to get tailored recommendations, or skip for now.</p>
+            <p>{required
+                    ? `Pick at least ${MIN_GENRES_STUDY} genres to get tailored recommendations.`
+                    : 'Pick a few genres to get tailored recommendations, or skip for now.'}
+            </p>
 
             {error && <p style={{ color: 'red' }}>{error}</p>}
 
@@ -106,12 +112,19 @@ function Onboarding({ userId, onComplete }) {
                 ))}
             </div>
 
-            <button onClick={handleSubmit} disabled={loading || selectedGenres.length === 0}>
+            <button onClick={handleSubmit} disabled={loading || selectedGenres.length < minGenres}>
                 {loading ? 'Loading...' : 'Get Recommendations'}
             </button>
-            <button onClick={handleSkip} disabled={loading} style={{ marginLeft: '8px' }}>
-                Skip for now
-            </button>
+            {required &&  selectedGenres.length < minGenres && (
+                <span style={{ marginLeft: '8px' }}>
+                    {minGenres - selectedGenres.length} more to go
+                </span>
+            )}
+            {!required && (
+                <button onClick={handleSkip} disabled={loading} style={{ marginLeft: '8px' }}>
+                    Skip for now
+                </button>)
+            }
         </div>
     )
 }
