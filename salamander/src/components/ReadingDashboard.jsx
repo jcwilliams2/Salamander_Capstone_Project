@@ -4,13 +4,20 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 const API = 'http://localhost:8000'
 const RECENT_PLACEMENT = 'top'
 
-const BAR = '#2a78d6'
-const INK = '#0b0b0b'
-const INK_2 = '#52514e'
-const GRID = '#e6e5e1'
+const BAR = 'var(--primary)'
+const INK = 'var(--text)'
+const INK_2 = 'var(--text-muted)'
+const GRID = 'var(--border)'
 
 const axisTick = { fill: INK_2, fontSize: 12 }
-const hoverCursor = { fill: 'rgba(0, 0, 0, 0.05)' }
+const hoverCursor = { fill: 'var(--text)', fillOpacity: 0.08 }
+
+const tooltipProps = {
+    cursor: hoverCursor,
+    contentStyle: { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' },
+    labelStyle: { color: 'var(--text)' },
+    itemStyle: { color: 'var(--text)' },
+}
 
 function RecentCover({ url, title }) {
     const [failed, setFailed] = useState(false)
@@ -26,7 +33,7 @@ function RecentCover({ url, title }) {
             src={url}
             alt={title}
             onError={() => setFailed(true)}
-            style={{ height: '180px', width: '120px', objectFit: 'cover', borderRadius: '4px', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)' }}
+            style={{ height: '180px', width: '120px', objectFit: 'cover', borderRadius: '4px', boxShadow: '0 2px 8px var(--shadow)' }}
         />
     )
 }
@@ -104,9 +111,9 @@ function monthData(dates, year, month) {
     return out
 }
 
-function Tile ({ label, value }) {
+function Tile ({ label, value, color }) {
     return (
-        <div style={{ border: `1px solid ${GRID}`, borderRadius: '8px', padding: '12px 16px', minWidth: '110px' }}>
+        <div style={{ border: `1px solid ${GRID}`, boxShadow: color ? `inset 0 4px 0 ${color}` : 'none', borderRadius: '8px', padding: '12px 16px', minWidth: '110px' }}>
             <div style={{ fontSize: '1.9em', fontWeight: 600, color: INK }}>{value}</div>
             <div style={{ fontSize: '0.85em', color: INK_2 }}>{label}</div>
         </div>
@@ -154,7 +161,7 @@ const smallButton = (active) => ({
     borderRadius: '6px',
     border: `1px solid ${active ? BAR : GRID}`,
     background: active ? BAR : 'transparent',
-    color: active ? '#fff' : INK_2,
+    color: active ? 'var(--text-on-primary)' : INK_2,
     cursor: 'pointer',
 })
 
@@ -197,7 +204,7 @@ function ReadingDashboard({ userId }) {
     const { loading, stats, failed } = state
 
     if (loading) return <p>Loading your reading history...</p>
-    if (failed || !stats) return <p style={{ color: 'red' }}>Couldn't load your reading history. Please try again.</p>
+    if (failed || !stats) return <p style={{ color: 'var(--danger)' }}>Couldn't load your reading history. Please try again.</p>
 
     const { status_counts: s, vote_counts: v } = stats
     const genres = stats.genres || []
@@ -237,13 +244,13 @@ function ReadingDashboard({ userId }) {
             ) : (
                 <>
                     {RECENT_PLACEMENT === 'top' && <RecentReads userId={userId} />}
-                    <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                        <Tile label="Finished" value={s.finished} />
-                        <Tile label="Reading" value={s.reading} />
-                        <Tile label="Want to Read" value={s.want_to_read} />
-                        <Tile label="Did not Finish" value={s.dnf} />
-                        <Tile label="Liked" value={v.up} />
-                        <Tile label="Disliked" value={v.down} />
+                    <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap', marginTop: '25px' }}>
+                        <Tile label="Finished" value={s.finished} color="var(--status-finished)" />
+                        <Tile label="Reading" value={s.reading} color="var(--status-reading)" />
+                        <Tile label="Want to Read" value={s.want_to_read} color="var(--status-want)" />
+                        <Tile label="Did not Finish" value={s.dnf} color="var(--status-dnf)" />
+                        <Tile label="Liked" value={v.up} color="var(--success)" />
+                        <Tile label="Disliked" value={v.down} color="var(--danger)" />
                     </div>
 
                     <ChartSection
@@ -258,7 +265,7 @@ function ReadingDashboard({ userId }) {
                                     <BarChart data={genres} layout="vertical" margin={{ top: 4, right: 32, bottom: 4, left: 8 }}>
                                         <XAxis type="number" hide />
                                         <YAxis type="category" dataKey="genre" width={120} tick={{ fill: INK_2, fontSize: 13 }} axisLine={false} tickLine={false} />
-                                        <Tooltip cursor={hoverCursor} formatter={(value) => [value, 'Books']} />
+                                        <Tooltip {...tooltipProps} formatter={(value) => [value, 'Books']} />
                                         <Bar dataKey="count" fill={BAR} radius={[0, 4, 4, 0]} barSize={16} isAnimationActive={false}>
                                             <LabelList dataKey="count" position="right" style={{ fill: INK_2, fontSize: 12 }} />
                                         </Bar>
@@ -295,7 +302,7 @@ function ReadingDashboard({ userId }) {
                                 <XAxis dataKey="label" interval={0} tick={axisTick} axisLine={false} tickLine={false} />
                                 <YAxis allowDecimals={false} domain={[0, (max) => Math.max(max, 1)]} tick={axisTick} axisLine={false} tickLine={false} width={28} />
                                 <Tooltip
-                                    cursor={hoverCursor}
+                                    {...tooltipProps}
                                     formatter={(value) => [value, 'Finished']}
                                     labelFormatter={(label) => (isMonthView ? `${new Date(cursor.y, cursor.m, 1).toLocaleString('en-US', { month: 'short' })} ${label}` : label)}
                                 />

@@ -9,7 +9,7 @@ function Cover({ url, title }) {
     const [failed, setFailed] = useState(false)
     if (!url || failed) {
         return (
-            <div style={{ height: '160px', border: '1px solid #ccc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ height: '160px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 No cover
             </div>
         )
@@ -23,8 +23,8 @@ function BookGrid({ books, userId}) {
         <div
             style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
-                gap: '16px',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                gap: '40px 16px',
                 textAlign: 'center',
             }}
         >
@@ -33,7 +33,7 @@ function BookGrid({ books, userId}) {
                     <Cover url={book.cover_url} title={book.title} />
                     <div><strong>{book.title}</strong></div>
                     <div>{book.author}</div>
-                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: '9px', gap: '8px', flexWrap: 'wrap' }}>
                         <VoteControls userId={userId} bookId={book.id} initialVote={book.vote} />
                         <StatusSelector userId={userId} bookId={book.id} initialStatus={book.status} />
                     </div>
@@ -56,7 +56,7 @@ function Pager({ page, totalPages, onGo }) {
 function GenreChips({ options, selected, onToggle, onClear }) {
     if (options.length === 0) return null
     return (
-        <div style={{ margin: '0 0 16px' }}>
+        <div style={{ margin: '3px 0 27px' }}>
             <div
                 role="group"
                 aria-label="Filter by genre"
@@ -74,9 +74,9 @@ function GenreChips({ options, selected, onToggle, onClear }) {
                                 padding: '4px 12px',
                                 borderRadius: '999px',
                                 cursor: 'pointer',
-                                border: active ? '2px solid #2b6cb0' : '1px solid #999',
-                                background: active ? '#2b6cb0' : 'transparent',
-                                color: active ? '#fff' : 'inherit',
+                                border: active ? '2px solid var(--primary)' : '1px solid var(--border)',
+                                background: active ? 'var(--primary)' : 'transparent',
+                                color: active ? 'var(--text-on-primary)' : 'inherit',
                                 fontWeight: active ? 600 : 400,
                             }}
                         >
@@ -144,7 +144,7 @@ function IsbnForm({ userId, onAdded }) {
             </button>
             {state.phase === 'adding' && <p>Adding this book. It can take a few seconds...</p>}
             {state.phase === 'added' && <p>Added. Updating your results...</p>}
-            {state.phase === 'failed' && <p style={{ color: 'red' }}>{state.message}</p>}
+            {state.phase === 'failed' && <p style={{ color: 'var(--danger)' }}>{state.message}</p>}
         </form>
     )
 }
@@ -228,18 +228,18 @@ function RequestPrompt({ query, userId, auto, onAdded }) {
     }
 
     return (
-        <div style={{ border: '1px solid #999', borderRadius: '8px', padding: '16px', maxWidth: '640px', margin: '16px auto', textAlign: 'center' }}>
+        <div style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '16px', maxWidth: '640px', margin: '16px auto', textAlign: 'center' }}>
             <p>
                 {auto
                     ? "This book isn't in the Salamander catalog yet. We found matches elsewhere. Which one would you like to add?"
                     : "We found other books matching your search that aren't in the catalog yet. Add the one you meant."}
             </p>
-            <div style={{ display: 'flex', flexWrap: "wrap", gap: '16px', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', flexWrap: "wrap", gap: '16px', justifyContent: 'center', marginTop: '16px' }}>
                 {candidates.map((c) => (
-                    <div key={c.isbn} style={{ width: '170px' }}>
+                    <div key={c.isbn} style={{ width: '170px', marginBottom: '8px' }}>
                         <Cover url={c.cover_url} title={c.title} />
-                        <div><strong>{c.title}</strong></div>
-                        <div>{c.author}</div>
+                        <div style={{ margin: '5px auto 2px' }}><strong>{c.title}</strong></div>
+                        <div style={{ marginBottom: '6px' }}>{c.author}</div>
                         <button type="button" disabled={phase === 'adding' || phase === 'added'} onClick={() => confirm(c)}>
                             {phase === 'adding' && busyIsbn === c.isbn ? 'Adding...' : 'Add to catalog'}
                         </button>
@@ -248,7 +248,7 @@ function RequestPrompt({ query, userId, auto, onAdded }) {
             </div>
             {phase === 'adding' && <p>Adding this book. It can take a few seconds...</p>}
             {phase === 'added' && <p>Added. Updating your results...</p>}
-            {phase === 'failed' && <p style={{ color: 'red' }}>{message}</p>}
+            {phase === 'failed' && <p style={{ color: 'var(--danger)' }}>{message}</p>}
             <div style={{ marginTop: '16px' }}>
                 <p style={{ marginBottom: 0 }}>Still not the one?</p>
                 <IsbnForm userId={userId} onAdded={onAdded} />
@@ -398,7 +398,7 @@ function CatalogPage({ userId }) {
                 aria-label="Search the catalog"
                 value={query}
                 onChange={handleQuery}
-                style={{ width: '60%', padding: '8px', marginBottom: '16px' }}
+                style={{ width: '60%', padding: '8px', marginBottom: '16px', marginTop: '3px' }}
             />
 
             <GenreChips options={genreOptions} selected={selected} onToggle={toggleGenre} onClear={clearGenres} />
@@ -406,7 +406,7 @@ function CatalogPage({ userId }) {
             {filtering ? (
                 <>
                     {!filterReady && <p>Filtering...</p>}
-                    {filterReady && filtered.failed && <p style={{ color: 'red' }}>Couldn't apply the filter. Please try again.</p>}
+                    {filterReady && filtered.failed && <p style={{ color: 'var(--danger)' }}>Couldn't apply the filter. Please try again.</p>}
                     {filterReady && !filtered.failed && filtered.items.length === 0 && (
                         <p>No books match {selected.join(' or ')}{searching ? ` for "${trimmed}"` : ''}.</p>
                     )}
@@ -416,7 +416,7 @@ function CatalogPage({ userId }) {
             ) : searching ? (
                 <>
                     {!searchReady && <p>Searching...</p>}
-                    {searchReady && search.failed && <p style={{ color: 'red' }}>Search failed. Please try again.</p>}
+                    {searchReady && search.failed && <p style={{ color: 'var(--danger)' }}>Search failed. Please try again.</p>}
                     {searchReady && !search.failed && search.items.length === 0 && <p>No books found for "{trimmed}".</p>}
                     {searchReady && !search.failed && <BookGrid books={search.items} userId={userId} />}
                     {searchReady && !search.failed && (
@@ -432,7 +432,7 @@ function CatalogPage({ userId }) {
             ) : (
                 <>
                     {!browseReady && <p>Loading catalog...</p>}
-                    {browseReady && browse.failed && <p style={{ color: 'red' }}>Couldn't load the catalog. Please try again.</p>}
+                    {browseReady && browse.failed && <p style={{ color: 'var(--danger)' }}>Couldn't load the catalog. Please try again.</p>}
                     {browseReady && !browse.failed && <BookGrid books={browse.items} userId={userId} />}
                     <Pager page={page} totalPages={totalPages} onGo={goToPage} />
                 </>

@@ -70,7 +70,7 @@ function SurveyPage({ userId }) {
     }
 
     if (!progress) return <p>Loading...</p>
-    if (progress.failed) return <p style={{ color: 'red' }}>We couldn't load the survey. Please refresh the page.</p>
+    if (progress.failed) return <p style={{ color: 'var(--danger)' }}>We couldn't load the survey. Please refresh the page.</p>
 
     if (done || progress.survey_done) {
         return (
@@ -106,7 +106,7 @@ function SurveyPage({ userId }) {
             </p>
 
             {items.map((item, index) => (
-                <fieldset key={item.id} style={{ margin: '16px 0', border: '1px solid #ddd', borderRadius: '8px' }}>
+                <fieldset key={item.id} style={{ margin: '16px 0', border: '1px solid var(--border)', borderRadius: '8px' }}>
                     <legend>{index + 1}. {item.text}</legend>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
                         {SCALE.map((label, i) => (
@@ -125,7 +125,7 @@ function SurveyPage({ userId }) {
                 </fieldset>
             ))}
 
-            {error && <p style={{ color: 'red' }}>{error}</p>}
+            {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
             <div style={{ textAlign: 'center' }}>
                 <button type="submit" disabled={!complete || busy}>
                     {busy ? 'Submitting...' : 'Submit'}

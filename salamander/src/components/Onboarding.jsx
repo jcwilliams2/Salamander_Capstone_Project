@@ -91,7 +91,7 @@ function Onboarding({ userId, onComplete, required = false }) {
                     : 'Pick a few genres to get tailored recommendations, or skip for now.'}
             </p>
 
-            {error && <p style={{ color: 'red' }}>{error}</p>}
+            {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', margin: '16px 0' }}>
                 {GENRE_OPTIONS.map((genre) => (
@@ -102,8 +102,8 @@ function Onboarding({ userId, onComplete, required = false }) {
                         style={{
                             padding: '6px 12px',
                             borderRadius: '16px',
-                            border: selectedGenres.includes(genre) ? '2px solid black' : '1px solid #ccc',
-                            background: selectedGenres.includes(genre) ? '#eee' : 'white',
+                            border: selectedGenres.includes(genre) ? '2px solid var(--primary)' : '1px solid var(--border)',
+                            background: selectedGenres.includes(genre) ? 'var(--surface-alt)' : 'var(--surface)',
                             cursor: 'pointer',
                         }}
                     >

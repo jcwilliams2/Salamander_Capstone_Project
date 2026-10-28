@@ -65,7 +65,7 @@ function StudyEntry({ onStarted, onLogin }) {
                 <button type="button" disabled={!captchaToken || busy} onClick={start} style={{ marginTop: '16px' }}>
                     {busy ? 'Starting...' : 'Start'}
                 </button>
-                {error && <p style={{ color: 'red' }}>{error}</p>}
+                {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
             </div>
         )
     }

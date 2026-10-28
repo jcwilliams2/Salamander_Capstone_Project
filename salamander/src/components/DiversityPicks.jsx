@@ -27,15 +27,15 @@ function DiversityPicks({ userId }) {
     if (!state.loaded) return null
 
     return (
-        <div style={{ marginTop: '32px' }}>
-            <h2>Something different</h2>
+        <div style={{ marginTop: '72px', marginBottom: '30px' }}>
+            <h2 style={{ marginBottom: '6px' }}>Something different</h2>
             {state.items.length === 0 ? (
-                <p style={{ color: '#666' }}>
+                <p style={{ color: 'var(--text-muted)' }}>
                     Suggestions beyond your usual reading will appear here once you've marked a few books as finished.
                 </p>
             ) : (
                 <>
-                    <p style={{ color: '#666' }}>A few picks that branch out from what you've been reading.</p>
+                    <p style={{ color: 'var(--text-muted)', marginBottom: '27px' }}>A few picks that branch out from what you've been reading.</p>
                     <BookCardGrid books={state.items} userId={userId} />
                 </>
             )}

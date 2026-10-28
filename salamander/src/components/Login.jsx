@@ -32,7 +32,7 @@ function Login({ onSuccess, switchToSignup }) {
     return (
         <form onSubmit={handleLogin}>
             <h2>Log in</h2>
-            {errorMessage && <p style={{color: 'red' }}>{errorMessage}</p>}
+            {errorMessage && <p style={{color: 'var(--danger)' }}>{errorMessage}</p>}
             <input
                 type="email"
                 placeholder="Email"

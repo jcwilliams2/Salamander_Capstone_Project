@@ -47,7 +47,7 @@ function WantToReadPage({ userId }) {
             <h2>Want to Read{!loading && !failed ? ` (${books.length})` : ''}</h2>
 
             {loading && <p>Loading your list...</p>}
-            {!loading && failed && <p style={{ color: 'red' }}>Couldn't load your list. Please try again.</p>}
+            {!loading && failed && <p style={{ color: 'var(--danger)' }}>Couldn't load your list. Please try again.</p>}
 
             {!loading && !failed && books.length === 0 && (
                 <p>Nothing to see here yet. Set a book's status to "Want to Read" from Recommendations or the Catalog and it will show up here.</p>
@@ -56,7 +56,7 @@ function WantToReadPage({ userId }) {
             {!loading && !failed && books.length > 0 && (
                 <>
                     {topGenres.length > 0 && (
-                        <p style={{ color: '#666' }}>
+                        <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>
                             Most common genres in your list:{' '}
                             {topGenres.map(([genre, count]) => `${genre} (${count})`).join(' . ')}
                         </p>

@@ -1,5 +1,6 @@
 import os
 import secrets
+import re
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -190,6 +191,26 @@ def mark_onboarding_complete(request: CompleteOnboardingRequest):
         raise HTTPException(status_code=404, detail="No profile found for this user")
     return {"success": True}
 
+class ThemeRequest(BaseModel):
+    user_id: str
+    theme: str
+
+THEME_ID = re.compile(r"[a-z][A-Za-z0-9]{1,30}")
+
+@app.get("/user-settings/{user_id}")
+def get_user_settings(user_id: str):
+    rows = supabase.table("profiles").select("theme").eq("id", user_id).execute().data
+    return {"theme": rows[0]["theme"] if rows else "light"}
+
+@app.post("/user-settings/theme")
+def set_theme(request: ThemeRequest):
+    if not THEME_ID.fullmatch(request.theme):
+        raise HTTPException(status_code=400, detail="Invalid theme name.")
+    result = supabase.table("profiles").update({"theme": request.theme}).eq("id", request.user_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="No profile found for this user")
+    return {"theme": request.theme}
+
 STUDY_AUTO_EXPLORE = 0.35
 STUDY_PILOT = os.environ.get("STUDY_PILOT") == "1"
 
@@ -277,7 +298,7 @@ def get_personalized_feed(user_id: str, explore: float = 0.0, strategy: str = "h
 
 @app.get("/recommendations/diversity/{user_id}")
 def get_diversity_feed(user_id: str):
-    return {"suggestions": diversity_suggestions(user_id, n=6)}
+    return {"suggestions": diversity_suggestions(user_id, n=8)}
 
 @app.get("/catalog/search")
 def catalog_search(q: str = "", user_id: str | None = None):

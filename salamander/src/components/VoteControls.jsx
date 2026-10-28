@@ -1,10 +1,10 @@
 import { useState } from 'react'
 
-const UP_COLOR = '#0b9c40'
-const DOWN_COLOR = '#d40f0f'
+const UP_COLOR = 'var(--success)'
+const DOWN_COLOR = 'var(--danger)'
 
 function ThumbUPIcon({ active }) {
-    const color = active ? UP_COLOR : 'black'
+    const color = active ? UP_COLOR : 'var(--text)'
     return (
         <svg
             width="20"
@@ -24,7 +24,7 @@ function ThumbUPIcon({ active }) {
 }
 
 function ThumbDownIcon({ active }) {
-    const color = active ? DOWN_COLOR : 'black'
+    const color = active ? DOWN_COLOR : 'var(--text)'
     return (
         <svg
             width="20"

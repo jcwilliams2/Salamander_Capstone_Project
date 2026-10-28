@@ -6,7 +6,7 @@ function Cover({ url, title }) {
     const [failed, setFailed] = useState(false)
     if (!url || failed) {
         return (
-            <div style={{ height: '180px', width: '120px', margin: '0 auto', border: '1px solid #ccc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ height: '180px', width: '120px', margin: '0 auto', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 No cover
             </div>
         )
@@ -20,8 +20,8 @@ function BookCardGrid({ books, userId, onStatusChange }) {
             style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-                gap: '24px',
-                maxWidth: '960px',
+                gap: '48px 24px',
+                maxWidth: '1240px',
                 margin: '0 auto',
                 textAlign: 'center',
             }}
@@ -35,9 +35,9 @@ function BookCardGrid({ books, userId, onStatusChange }) {
                     }}
                 >
                     <Cover url={book.cover_url} title={book.title} />
-                    <div><strong>{book.title}</strong></div>
-                    <div>{book.author}</div>
-                    <p style={{ fontSize: '0.9em', color: '#666' }}>{book.explanation}</p>
+                    <div style={{ marginTop: '9px' }}><strong>{book.title}</strong></div>
+                    <div style={{ marginBottom: '10px' }}>{book.author}</div>
+                    <p style={{ fontSize: '0.9em', color: 'var(--text-muted)', margin: '0 auto 8px' }}>{book.explanation}</p>
                     {book.id && (
                         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: 'auto' }}>
                             <VoteControls userId={userId} bookId={book.id} initialVote={book.vote} />

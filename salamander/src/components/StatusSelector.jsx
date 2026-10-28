@@ -7,6 +7,13 @@ const STATUS_OPTIONS = [
     { value: 'dnf', label: 'Did Not Finish' },
 ]
 
+const STATUS_COLOR = {
+    want_to_read: 'var(--status-want)',
+    reading: 'var(--status-reading)',
+    finished: 'var(--status-finished)',
+    dnf: 'var(--status-dnf)',
+}
+
 function StatusSelector({ userId, bookId, initialStatus = '' }) {
     const [status, setStatus] = useState(initialStatus)
     const [loading, setLoading] = useState(false)
@@ -37,7 +44,12 @@ function StatusSelector({ userId, bookId, initialStatus = '' }) {
     }
 
     return (
-        <select value={status} onChange={handleChange} disabled={loading}>
+        <select 
+            value={status}
+            onChange={handleChange} 
+            disabled={loading}
+            style={status ? { borderLeft: `5px solid ${STATUS_COLOR[status]}` } : undefined}
+        >
             <option value="">Set status</option>
             {STATUS_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>

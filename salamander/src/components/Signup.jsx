@@ -53,7 +53,7 @@ function Signup ({ onSuccess, switchToLogin }) {
     return (
         <form onSubmit={handleSignup}>
             <h2>Create your account</h2>
-            {errorMessage && <p style={{color: 'red'}}>{errorMessage}</p>}
+            {errorMessage && <p style={{color: 'var(--danger)'}}>{errorMessage}</p>}
             <input
                 type="text"
                 placeholder="Username"

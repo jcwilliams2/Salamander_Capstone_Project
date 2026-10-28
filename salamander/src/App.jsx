@@ -13,7 +13,8 @@ import ExplorationControl from './components/ExplorationControl'
 import ReadingDashboard from './components/ReadingDashboard'
 import StudyEntry from './components/StudyEntry'
 import SurveyPage from './components/SurveyPage'
-import './App.css'
+import ThemePicker from './components/ThemePicker'
+import { applyTheme, DEFAULT_THEME } from './theme/themes'
 
 const navStyle = ({ isActive }) => ({ fontWeight: isActive ? 'bold' : 'normal'})
 
@@ -93,6 +94,10 @@ function App() {
       .catch((err) => console.error('Failed to load recommendations', err))
   }, [session, armReady, onboardingComplete, onHome])
 
+  useEffect(() => {
+    if (isAnonymous) applyTheme(DEFAULT_THEME)
+  }, [isAnonymous])
+
   function handleOnboardingComplete(recs) {
     setRecommendations(recs)
     setOnboardingComplete(true)
@@ -154,14 +159,15 @@ function App() {
 
   return (
       <div>
-        <nav style={{ display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+        <nav className="app-nav">
           <strong>Salamander</strong>
           <NavLink to="/" end style={navStyle}>Recommendations</NavLink>
           <NavLink to="/catalog" style={navStyle}>Catalog</NavLink>
           <NavLink to="/want-to-read" style={navStyle}>Want to Read</NavLink>
           <NavLink to="/history" style={navStyle}>Reading History</NavLink>
           {isAnonymous && <NavLink to="/survey" style={navStyle}>Finish & take survey</NavLink>}
-          <span>{session.user.email}</span>
+          <span className="nav-email" title={session.user.email}>{session.user.email}</span>
+          {!isAnonymous && <ThemePicker userId={session.user.id} />}
           {!session.user.is_anonymous && <button onClick={() => supabase.auth.signOut()}>Log out</button>}
         </nav>
         
