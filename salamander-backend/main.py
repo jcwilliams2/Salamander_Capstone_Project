@@ -15,6 +15,7 @@ from recommend import (zero_history_recommend, build_genre_centroids,
 from search import (search_catalog, browse_catalog, attach_user_state,
                     filter_catalog, list_genres)
 from catalog_request import find_external_matches, add_requested_book, RequestLimitError
+from reading_goals import validate_goal, validate_year
 from supabase_client import supabase
 
 app = FastAPI()
@@ -210,6 +211,40 @@ def set_theme(request: ThemeRequest):
     if not result.data:
         raise HTTPException(status_code=404, detail="No profile found for this user")
     return {"theme": request.theme}
+
+class GoalRequest(BaseModel):
+    user_id: str
+    year: int
+    goal: int | None = None
+
+@app.get("/reading-goal/{user_id}")
+def get_reading_goal(user_id: str, year: int | None = None):
+    try:
+        year = validate_year(year) if year is not None else datetime.now(timezone.utc).year
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    rows = (supabase.table("reading_goals").select("goal")
+                .eq("user_id", user_id).eq("year", year).execute().data)
+    return {"year": year, "goal": rows[0]["goal"] if rows else None}
+
+@app.post("/reading-goal")
+def set_reading_goal(request: GoalRequest):
+    try:
+        year = validate_year(request.year)
+        goal = validate_goal(request.goal)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not supabase.table("profiles").select("id").eq("id", request.user_id).execute().data:
+        raise HTTPException(status_code=404, detail="No profile found for this user")
+    if goal is None:
+        supabase.table("reading_goals").delete().eq("user_id", request.user_id).eq("year", year).execute()
+    else:
+        supabase.table("reading_goals").upsert(
+            {"user_id": request.user_id, "year": year, "goal": goal,
+             "updated_at": datetime.now(timezone.utc).isoformat()},
+            on_conflict="user_id,year",
+        ).execute()
+    return {"year": year, "goal": goal}
 
 STUDY_AUTO_EXPLORE = 0.35
 STUDY_PILOT = os.environ.get("STUDY_PILOT") == "1"

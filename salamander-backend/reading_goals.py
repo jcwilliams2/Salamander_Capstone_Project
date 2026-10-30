@@ -2,6 +2,13 @@ from datetime import date
 from math import floor
 
 MAX_GOAL = 1000
+MIN_YEAR = 2000
+MAX_YEAR = 2100
+
+def validate_year(value):
+    if isinstance(value, bool) or not isinstance(value, int) or not MIN_YEAR <= value <= MAX_YEAR:
+        raise ValueError(f"Year must be a whole number from {MIN_YEAR} to {MAX_YEAR}.")
+    return value
 
 def validate_goal(value):
     if value is None:
