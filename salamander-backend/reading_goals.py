@@ -1,4 +1,5 @@
-from datetime import date
+import re
+from datetime import date, datetime
 from math import floor
 
 MAX_GOAL = 1000
@@ -51,3 +52,56 @@ def compute_pace(goal, finished, today):
         "status": status,
         "amount": amount,
     }
+
+def finished_count_for_year(finished_at_values, year):
+    count = 0
+    for value in finished_at_values:
+        if not value:
+            continue
+        text = re.sub(r"\.(\d+)", lambda m: "." + (m.group(1) + "000000")[:6], str(value).replace("Z", "+00:00"))
+        try:
+            moment = datetime.fromisoformat(text)
+        except ValueError:
+            continue
+        if moment.year == year:
+            count += 1
+    return count
+
+def _parse_ts(value):
+    if not value:
+        return None
+    try:
+        text = str(value).replace("Z", "+00:00")
+        text = re.sub(r"\.(\d+)", lambda m: "." + m.group(1).ljust(6, "0")[:6], text)
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+def next_started_at(old_status, old_started_at, new_status, now):
+    if new_status == "reading":
+        if old_status == "reading":
+            return old_started_at
+        return now
+    if new_status == "finished":
+        if old_status in ("reading", "finished"):
+            return old_started_at
+        return None
+    return None
+
+def average_days_to_finish(rows):
+    durations = []
+    for row in rows:
+        start = _parse_ts(row.get("started_at"))
+        end = _parse_ts(row.get("finished_at"))
+        if start is None or end is None:
+            continue
+        if (start.tzinfo is None) != (end.tzinfo is None):
+            continue
+        seconds = (end - start).total_seconds()
+        if seconds < 0:
+            continue
+        durations.append(seconds / 86400)
+    if not durations:
+        return {"average_days": None, "books_counted": 0}
+    return {"average_days": round(sum(durations) / len(durations), 1),
+            "books_counted": len(durations)}

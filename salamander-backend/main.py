@@ -4,7 +4,7 @@ import re
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from collections import Counter
 from collaborative import recommend_with_strategy
 from recommend import (zero_history_recommend, build_genre_centroids, 
@@ -15,7 +15,9 @@ from recommend import (zero_history_recommend, build_genre_centroids,
 from search import (search_catalog, browse_catalog, attach_user_state,
                     filter_catalog, list_genres)
 from catalog_request import find_external_matches, add_requested_book, RequestLimitError
-from reading_goals import validate_goal, validate_year
+from reading_goals import (validate_goal, validate_year, compute_pace, finished_count_for_year,
+                            next_started_at, average_days_to_finish)
+from reading_dates import apply_date_edit
 from supabase_client import supabase
 
 app = FastAPI()
@@ -76,18 +78,21 @@ class ReadingStatusRequest(BaseModel):
 @app.post("/reading-status")
 def update_reading_status(request: ReadingStatusRequest):
     now = datetime.now(timezone.utc).isoformat()
+    existing_rows = (supabase.table("reading_status").select("status, started_at, finished_at")
+                        .eq("user_id", request.user_id).eq("book_id", request.book_id)
+                        .execute().data)
+    existing = existing_rows[0] if existing_rows else {}
     row = {
         "user_id": request.user_id,
         "book_id": request.book_id,
         "status": request.status,
         "updated_at": now,
         "finished_at": None,
+        "started_at": next_started_at(existing.get("status"), existing.get("started_at"),
+                                        request.status, now),
     }
     if request.status == "finished":
-        existing = (supabase.table("reading_status").select("finished_at")
-                    .eq("user_id", request.user_id).eq("book_id", request.book_id)
-                    .execute().data)
-        row["finished_at"] = (existing[0].get("finished_at") if existing else None) or now
+        row["finished_at"] = existing.get("finished_at") or now
     supabase.table("reading_status").upsert(row, on_conflict="user_id,book_id").execute()
     invalidate_user_centroids(request.user_id)
     return {"success": True}
@@ -171,6 +176,52 @@ def delete_reading_status(request: DeleteStatusRequest):
     invalidate_user_centroids(request.user_id)
     return {"success": True}
 
+class ReadingDatesRequest(BaseModel):
+    user_id: str
+    book_id: str
+    started_on: str | None = None
+    finished_on: str | None = None
+    today: str | None = None
+
+@app.post("/reading-dates")
+def edit_reading_dates(request: ReadingDatesRequest):
+    sent = getattr(request, "model_fields_set", getattr(request, "__fields_set__", set()))
+    edit = {k: getattr(request, k) for k in ("started_on", "finished_on") if k in sent}
+    try:
+        day = date.fromisoformat(request.today) if request.today else datetime.now(timezone.utc).date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="today must be a date like 2026-10-31.")
+    rows = (supabase.table("reading_status").select("status, started_at, finished_at")
+                .eq("user_id", request.user_id).eq("book_id", request.book_id).execute().data)
+    if not rows:
+        raise HTTPException(status_code=404, detail="That book isn't in your reading log.")
+    row = rows[0]
+    try:
+        changes = apply_date_edit(row["status"], row.get("started_at"), row.get("finished_at"), edit, day)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if changes:
+        (supabase.table("reading_status").update(changes)
+            .eq("user_id", request.user_id).eq("book_id", request.book_id).execute())
+    return {"started_at": changes.get("started_at", row.get("started_at")),
+            "finished_at": changes.get("finished_at", row.get("finished_at"))}
+
+@app.get("/reading-log/{user_id}")
+def reading_log(user_id: str):
+    rows = (supabase.table("reading_status").select("book_id, started_at, finished_at")
+                .eq("user_id", user_id).eq("status", "finished")
+                .order("finished_at", desc=True).execute().data)
+    by_id = {}
+    ids = [r["book_id"] for r in rows]
+    for i in range(0, len(ids), 100):
+        chunk = ids[i:i + 100]
+        for b in supabase.table("books").select("id, title, author, cover_url").in_("id", chunk).execute().data:
+            by_id[b["id"]] = b
+    return {"books": [
+        {**by_id[r["book_id"]], "started_at": r["started_at"], "finished_at": r["finished_at"]}
+        for r in rows if r["book_id"] in by_id
+    ]}
+
 @app.get("/user-onboarding-status/{user_id}")
 def check_onboarding_status(user_id: str):
     result = supabase.table("profiles").select("onboarding_completed").eq("id", user_id).execute()
@@ -245,6 +296,23 @@ def set_reading_goal(request: GoalRequest):
             on_conflict="user_id,year",
         ).execute()
     return {"year": year, "goal": goal}
+
+@app.get("/reading-pace/{user_id}")
+def reading_pace(user_id: str, today: str | None = None):
+    try:
+        day = date.fromisoformat(today) if today else datetime.now(timezone.utc).date()
+        validate_year(day.year)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="today must be a date like 2026-10-30.")
+    goal_rows = (supabase.table("reading_goals").select("goal")
+                    .eq("user_id", user_id).eq("year", day.year).execute().data)
+    goal = goal_rows[0]["goal"] if goal_rows else None
+    finished_rows = (supabase.table("reading_status").select("started_at, finished_at")
+                        .eq("user_id", user_id).eq("status", "finished").execute().data)
+    finished = finished_count_for_year([r["finished_at"] for r in finished_rows], day.year)
+    return {"year": day.year, "goal": goal, "finished": finished,
+            "pace": compute_pace(goal, finished, day),
+            "time_to_finish": average_days_to_finish(finished_rows)}
 
 STUDY_AUTO_EXPLORE = 0.35
 STUDY_PILOT = os.environ.get("STUDY_PILOT") == "1"

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from 'recharts'
+import GoalPace from './GoalPace'
+import ReadingLog from './ReadingLog'
 
 const API = 'http://localhost:8000'
 const RECENT_PLACEMENT = 'top'
@@ -38,7 +40,7 @@ function RecentCover({ url, title }) {
     )
 }
 
-function RecentReads({ userId }) {
+function RecentReads({ userId, refreshKey = 0 }) {
     const [books, setBooks] = useState([])
 
     useEffect(() => {
@@ -55,7 +57,7 @@ function RecentReads({ userId }) {
                 setBooks([])
             })
         return () => controller.abort()
-    }, [userId])
+    }, [userId, refreshKey])
 
     if (books.length === 0) return null
 
@@ -177,9 +179,10 @@ function RangeToggle({ view, onChange }) {
     )
 }
 
-function ReadingDashboard({ userId }) {
+function ReadingDashboard({ userId, showGoal = true }) {
     const [state, setState] = useState({ loading: true, stats: null, failed: false })
     const [view, setView] = useState('year')
+    const [refreshKey, setRefreshKey] = useState(0)
     const [cursor, setCursor] = useState(() => {
         const now = new Date()
         return { y: now.getFullYear(), m: now.getMonth() }
@@ -199,7 +202,7 @@ function ReadingDashboard({ userId }) {
                 setState({ loading: false, stats: null, failed: true })
             })
         return () => controller.abort()
-    }, [userId])
+    }, [userId, refreshKey])
 
     const { loading, stats, failed } = state
 
@@ -234,16 +237,23 @@ function ReadingDashboard({ userId }) {
     const tableRows = isMonthView
         ? chartData.filter((r) => r.count > 0).map((r) => ({ label: `${new Date(cursor.y, cursor.m, 1).toLocaleString('en-US', { month: 'short' })} ${r.label}`, count: r.count }))
         : chartData
+    const goalCard = showGoal ? <GoalPace userId={userId} refreshKey={refreshKey} /> : null
+    const logCard = showGoal
+        ? <ReadingLog userId={userId} onSaved={() => setRefreshKey((k) => k + 1)} />
+        : null
 
     return (
         <div>
             <h2>Reading History</h2>
 
             {logged === 0 ? (
-                <p>No reading history yet. Set a book's status from Recommendations or the Catalog and your stats will show up here.</p>
+                <>
+                    {goalCard}
+                    <p>No reading history yet. Set a book's status from Recommendations or the Catalog and your stats will show up here.</p>
+                </>
             ) : (
                 <>
-                    {RECENT_PLACEMENT === 'top' && <RecentReads userId={userId} />}
+                    {RECENT_PLACEMENT === 'top' && <RecentReads userId={userId} refreshKey={refreshKey} />}
                     <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap', marginTop: '25px' }}>
                         <Tile label="Finished" value={s.finished} color="var(--status-finished)" />
                         <Tile label="Reading" value={s.reading} color="var(--status-reading)" />
@@ -252,6 +262,8 @@ function ReadingDashboard({ userId }) {
                         <Tile label="Liked" value={v.up} color="var(--success)" />
                         <Tile label="Disliked" value={v.down} color="var(--danger)" />
                     </div>
+
+                    <div style={{ maxWidth: '720px', margin: '0 auto' }}>{goalCard}{logCard}</div>
 
                     <ChartSection
                         title="What you read"
@@ -315,7 +327,7 @@ function ReadingDashboard({ userId }) {
                             rows={tableRows}
                         />
                     </ChartSection>
-                    {RECENT_PLACEMENT === 'bottom' && <RecentReads userId={userId} />}
+                    {RECENT_PLACEMENT === 'bottom' && <RecentReads userId={userId} refreshKey={refreshKey} />}
                 </>
             )}
         </div>

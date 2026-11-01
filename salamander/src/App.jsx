@@ -193,7 +193,7 @@ function App() {
           />
           <Route path="/catalog" element={<CatalogPage userId={session.user.id} />} />
           <Route path="/want-to-read" element={<WantToReadPage userId={session.user.id} />} />
-          <Route path="/history" element={<ReadingDashboard userId={session.user.id} />} />
+          <Route path="/history" element={<ReadingDashboard userId={session.user.id} showGoal={!isAnonymous} />} />
           <Route path="/survey" element={<SurveyPage userId={session.user.id} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
