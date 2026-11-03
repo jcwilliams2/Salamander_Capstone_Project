@@ -11,6 +11,7 @@ import BookCardGrid from './components/BookCardGrid'
 import DiversityPicks from './components/DiversityPicks'
 import ExplorationControl from './components/ExplorationControl'
 import ReadingDashboard from './components/ReadingDashboard'
+import LibraryPage from './components/LibraryPage'
 import StudyEntry from './components/StudyEntry'
 import SurveyPage from './components/SurveyPage'
 import ThemePicker from './components/ThemePicker'
@@ -163,6 +164,7 @@ function App() {
           <strong>Salamander</strong>
           <NavLink to="/" end style={navStyle}>Recommendations</NavLink>
           <NavLink to="/catalog" style={navStyle}>Catalog</NavLink>
+          {!isAnonymous && <NavLink to="/library" style={navStyle}>Library</NavLink>}
           <NavLink to="/want-to-read" style={navStyle}>Want to Read</NavLink>
           <NavLink to="/history" style={navStyle}>Reading History</NavLink>
           {isAnonymous && <NavLink to="/survey" style={navStyle}>Finish & take survey</NavLink>}
@@ -193,6 +195,7 @@ function App() {
           />
           <Route path="/catalog" element={<CatalogPage userId={session.user.id} />} />
           <Route path="/want-to-read" element={<WantToReadPage userId={session.user.id} />} />
+          {!isAnonymous && <Route path="/library" element={<LibraryPage userId={session.user.id} />} />}
           <Route path="/history" element={<ReadingDashboard userId={session.user.id} showGoal={!isAnonymous} />} />
           <Route path="/survey" element={<SurveyPage userId={session.user.id} />} />
           <Route path="*" element={<Navigate to="/" replace />} />

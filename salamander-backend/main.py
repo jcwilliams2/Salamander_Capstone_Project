@@ -18,6 +18,7 @@ from catalog_request import find_external_matches, add_requested_book, RequestLi
 from reading_goals import (validate_goal, validate_year, compute_pace, finished_count_for_year,
                             next_started_at, average_days_to_finish)
 from reading_dates import apply_date_edit
+from library import sort_library
 from supabase_client import supabase
 
 app = FastAPI()
@@ -221,6 +222,24 @@ def reading_log(user_id: str):
         {**by_id[r["book_id"]], "started_at": r["started_at"], "finished_at": r["finished_at"]}
         for r in rows if r["book_id"] in by_id
     ]}
+
+@app.get("/library/{user_id}")
+def library(user_id: str, sort: str = "status"):
+    rows = (supabase.table("reading_status").select("book_id, status, added_at")
+                .eq("user_id", user_id).execute().data)
+    by_id = {}
+    ids = [r["book_id"] for r in rows]
+    for i in range(0, len(ids), 100):
+        chunk = ids[i: i + 100]
+        for b in supabase.table("books").select("id, title, author, cover_url").in_("id", chunk).execute().data:
+            by_id[b["id"]] = b
+    items = [{**by_id[r["book_id"]], "status": r["status"], "added_at": r["added_at"]}
+                for r in rows if r["book_id"] in by_id]
+    try:
+        ordered = sort_library(items, sort)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"sort": sort, "total": len(ordered), "books": ordered}
 
 @app.get("/user-onboarding-status/{user_id}")
 def check_onboarding_status(user_id: str):
