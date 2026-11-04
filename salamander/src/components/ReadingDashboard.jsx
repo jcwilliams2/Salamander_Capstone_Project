@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList, PieChart, Pie, Cell } from 'recharts'
 import GoalPace from './GoalPace'
 import ReadingLog from './ReadingLog'
+import MonthCard from './MonthCard'
 
 const API = 'http://localhost:8000'
 const RECENT_PLACEMENT = 'top'
@@ -148,6 +149,42 @@ function DataTable({ columns, rows }) {
     )
 }
 
+const SLICE_OPACITY = [1, 0.8, 0.62, 0.46, 0.32]
+
+function GenreDonut({ genres }) {
+    const sorted = [...genres].sort((a, b) => b.count - a.count)
+    const total = sorted.reduce((sum, g) => sum + g.count, 0)
+    if (total === 0) return null
+
+    const slices = sorted.slice(0, 5).map((g, i) => ({ name: g.genre, value: g.count, fill: 'var(--primary)', opacity: SLICE_OPACITY[i] }))
+    const otherCount = sorted.slice(5).reduce((sum, g) => sum + g.count, 0)
+    if (otherCount > 0) slices.push({ name: 'Other', value: otherCount, fill: 'var(--text-muted)', opacity: 0.55 })
+    const percent = (value) => Math.round((value / total) * 100)
+
+    return (
+        <div>
+            <div style={{ textAlign: 'center', color: INK_2, fontSize: '0.85em' }}>Genre mix (top genres)</div>
+            <ResponsiveContainer width="100%" height={190}>
+                <PieChart>
+                    <Pie data={slices} dataKey="value" nameKey="name" innerRadius="58%" outerRadius="95%" stroke="var(--surface)" strokeWidth={2} isAnimationActive={false}>
+                        {slices.map((s) => <Cell key={s.name} fill={s.fill} fillOpacity={s.opacity} />)}
+                    </Pie>
+                    <Tooltip {...tooltipProps} formatter={(value, name) => [`${value} (${percent(value)}%)`, name]} />
+                </PieChart>
+            </ResponsiveContainer>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '4px 0 0', fontSize: '0.85em', color: INK_2 }}>
+                {slices.map((s) => (
+                    <li key={s.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '2px 0' }}>
+                        <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: s.fill, opacity: s.opacity, flex: '0 0 auto' }} />
+                        <span style={{ flex: 1 }}>{s.name}</span>
+                        <span>{percent(s.value)}%</span>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    )
+}
+
 function ChartSection({ title, subtitle, children }) {
     return (
         <section style={{ maxWidth: '720px', margin: '32px auto 0', textAlign: 'left' }}>
@@ -241,6 +278,7 @@ function ReadingDashboard({ userId, showGoal = true }) {
     const logCard = showGoal
         ? <ReadingLog userId={userId} onSaved={() => setRefreshKey((k) => k + 1)} />
         : null
+    const monthCard = showGoal ? <MonthCard userId={userId} refreshKey={refreshKey} /> : null
 
     return (
         <div>
@@ -263,7 +301,7 @@ function ReadingDashboard({ userId, showGoal = true }) {
                         <Tile label="Disliked" value={v.down} color="var(--danger)" />
                     </div>
 
-                    <div style={{ maxWidth: '720px', margin: '0 auto' }}>{goalCard}{logCard}</div>
+                    <div style={{ maxWidth: '720px', margin: '0 auto' }}>{goalCard}{monthCard}{logCard}</div>
 
                     <ChartSection
                         title="What you read"
@@ -273,16 +311,23 @@ function ReadingDashboard({ userId, showGoal = true }) {
                             <p>No genre data yet.</p>
                         ) : (
                             <>
-                                <ResponsiveContainer width="100%" height={Math.max(160, genres.length * 36)}>
-                                    <BarChart data={genres} layout="vertical" margin={{ top: 4, right: 32, bottom: 4, left: 8 }}>
-                                        <XAxis type="number" hide />
-                                        <YAxis type="category" dataKey="genre" width={120} tick={{ fill: INK_2, fontSize: 13 }} axisLine={false} tickLine={false} />
-                                        <Tooltip {...tooltipProps} formatter={(value) => [value, 'Books']} />
-                                        <Bar dataKey="count" fill={BAR} radius={[0, 4, 4, 0]} barSize={16} isAnimationActive={false}>
-                                            <LabelList dataKey="count" position="right" style={{ fill: INK_2, fontSize: 12 }} />
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
+                                <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                    <div style={{ flex: '2 1 340px', minWidth: 0 }}>
+                                        <ResponsiveContainer width="100%" height={Math.max(160, genres.length * 36)}>
+                                            <BarChart data={genres} layout="vertical" margin={{ top: 4, right: 32, bottom: 4, left: 8 }}>
+                                                <XAxis type="number" hide />
+                                                <YAxis type="category" dataKey="genre" width={120} tick={{ fill: INK_2, fontSize: 13 }} axisLine={false} tickLine={false} />
+                                                <Tooltip {...tooltipProps} formatter={(value) => [value, 'Books']} />
+                                                <Bar dataKey="count" fill={BAR} radius={[0, 4, 4, 0]} barSize={16} isAnimationActive={false}>
+                                                    <LabelList dataKey="count" position="right" style={{ fill: INK_2, fontSize: 12 }} />
+                                                </Bar>
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                    <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                                        <GenreDonut genres={genres} />
+                                    </div>
+                                </div>
                                 <DataTable
                                     columns={[{ key: 'genre', label: 'Genre' }, { key: 'count', label: 'Books' }]}
                                     rows={genres}

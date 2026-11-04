@@ -19,6 +19,8 @@ from reading_goals import (validate_goal, validate_year, compute_pace, finished_
                             next_started_at, average_days_to_finish)
 from reading_dates import apply_date_edit
 from library import sort_library
+from monthly_summary import (summarize_month, finished_in_month, previous_month, month_counts,
+                                first_month, month_range, goal_progress, validate_month, validate_tz_offset)
 from supabase_client import supabase
 
 app = FastAPI()
@@ -240,6 +242,55 @@ def library(user_id: str, sort: str = "status"):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"sort": sort, "total": len(ordered), "books": ordered}
+
+@app.get("/monthly-summary/{user_id}")
+def monthly_summary(user_id: str, today: str | None = None, tz_offset: int = 0,
+                    year: int | None = None, month: int | None = None):
+    try:
+        day = date.fromisoformat(today) if today else datetime.now(timezone.utc).date()
+        validate_year(day.year)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="today must be a date like 2026-11-03.")
+    try:
+        validate_tz_offset(tz_offset)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if (year is None) != (month is None):
+        raise HTTPException(status_code=400, detail="Send both your year and month, or neither.")
+    try:
+        if year is None:
+            year, month = previous_month(day.year, day.month)
+        validate_year(year)
+        validate_month(month)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if (year, month) > (day.year, day.month):
+        raise HTTPException(status_code=400, detail="That month hasn't happened yet.")
+
+    rows = (supabase.table("reading_status").select("book_id, status, started_at, finished_at, added_at")
+            .eq("user_id", user_id).execute().data)
+    finished = [r for r in rows if r["status"] == "finished"]
+    in_month = [r for r in finished if finished_in_month(r, year, month, tz_offset)]
+    by_id = {}
+    votes = {}
+    ids = [r["book_id"] for r in in_month]
+    for i in range(0, len(ids), 100):
+        chunk = ids[i: i + 100]
+        for b in supabase.table("books").select("id, title, author, cover_url, genre_tags").in_("id", chunk).execute().data:
+            by_id[b["id"]] = b
+        for v in supabase.table("feedback").select("book_id, vote").eq("user_id", user_id).in_("book_id", chunk).execute().data:
+            votes[v["book_id"]] = v["vote"]
+    items = [{**by_id[r["book_id"]], **r, "vote": votes.get(r["book_id"])} for r in in_month if r["book_id"] in by_id]
+    
+    goal_rows = (supabase.table("reading_goals").select("goal")
+                    .eq("user_id", user_id).eq("year", year).execute().data)
+    goal = goal_rows[0]["goal"] if goal_rows else None
+
+    result = summarize_month(items, year, month, tz_offset)
+    result["months"] = month_counts(finished, tz_offset)
+    result["range"] = month_range(first_month(rows, tz_offset), (year, month), (day.year, day.month))
+    result["goal_progress"] = goal_progress(goal, finished, year, month, tz_offset)
+    return result
 
 @app.get("/user-onboarding-status/{user_id}")
 def check_onboarding_status(user_id: str):

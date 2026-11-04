@@ -4,7 +4,7 @@ export const THEMES = {
         colors: {
             bg: '#ffffff', surface: '#f6f7f9', surfaceAlt: '#eceef2', inputBg: '#ffffff',
             text: '#1a1d23', textMuted: '#5b6270', textOnPrimary: '#ffffff', link: '#1d4ed8',
-            border: '#d5d9e0', focusRing: '#2563eb', shadow: '#rgba(15, 23, 42, 0.12)',
+            border: '#d5d9e0', focusRing: '#2563eb', shadow: 'rgba(15, 23, 42, 0.12)',
             primary: '#2563eb', primaryHover: '#1d4ed8',
             success: '#15803d', warning: '#b45309', danger: '#b91c1c',
             statusWant: '#6d28d9', statusReading: '#2563eb', statusFinished: '#15803d', statusDnf: '#b91c1c',
@@ -59,7 +59,7 @@ export const THEMES = {
         colors: {
             bg: '#fdf3e2', surface: '#f8e3c4', surfaceAlt: '#f0d3a6', inputBg: '#fffaf1',
             text: '#35404a', textMuted: '#55616c', textOnPrimary: '#ffffff', link: '#a8403f',
-            border: '#dcc08f', focusRing: '#cf6e6c', shadow: 'rgba(93, 1065, 115, 0.2)',
+            border: '#dcc08f', focusRing: '#cf6e6c', shadow: 'rgba(93, 105, 115, 0.2)',
             primary: '#a8403f', primaryHover: '#8e3231',
             success: '#3f6b55', warning: '#8a5a10', danger: '#a8403f',
             statusWant: '#7a4f7a', statusReading: '#3f5f7a', statusFinished: '#3f6b55', statusDnf: '#a8403f',
