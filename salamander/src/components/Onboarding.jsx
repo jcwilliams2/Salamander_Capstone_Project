@@ -1,3 +1,4 @@
+import { API } from '../lib/api'
 import { useState } from 'react'
 
 const GENRE_OPTIONS = [
@@ -28,7 +29,7 @@ function Onboarding({ userId, onComplete, required = false }) {
         setError('')
 
         try {
-            const response = await fetch('http://localhost:8000/recommendations/onboarding', {
+            const response = await fetch(`${API}/recommendations/onboarding`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ selected_genres: selectedGenres }),
@@ -40,7 +41,7 @@ function Onboarding({ userId, onComplete, required = false }) {
 
             const data = await response.json()
 
-            await fetch('http://localhost:8000/complete-onboarding', {
+            await fetch(`${API}/complete-onboarding`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user_id: userId, selected_genres: selectedGenres }),
@@ -60,7 +61,7 @@ function Onboarding({ userId, onComplete, required = false }) {
         setError('')
 
         try {
-            const response = await fetch('http://localhost:8000/recommendations/onboarding', {
+            const response = await fetch(`${API}/recommendations/onboarding`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({}),
@@ -68,7 +69,7 @@ function Onboarding({ userId, onComplete, required = false }) {
 
             const data = await response.json()
 
-            await fetch('http://localhost:8000/complete-onboarding', {
+            await fetch(`${API}/complete-onboarding`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user_id: userId, selected_genres: [] }),

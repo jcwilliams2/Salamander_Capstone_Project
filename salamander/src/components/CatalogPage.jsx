@@ -1,8 +1,8 @@
+import { API } from '../lib/api'
 import { useState, useEffect } from 'react'
 import VoteControls from './VoteControls'
 import StatusSelector from './StatusSelector'
 
-const API = 'http://localhost:8000'
 const PAGE_SIZE = 24
 
 function Cover({ url, title }) {

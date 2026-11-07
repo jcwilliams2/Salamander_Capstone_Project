@@ -1,10 +1,10 @@
+import { API } from '../lib/api'
 import { useState, useEffect } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList, PieChart, Pie, Cell } from 'recharts'
 import GoalPace from './GoalPace'
 import ReadingLog from './ReadingLog'
 import MonthCard from './MonthCard'
 
-const API = 'http://localhost:8000'
 const RECENT_PLACEMENT = 'top'
 
 const BAR = 'var(--primary)'

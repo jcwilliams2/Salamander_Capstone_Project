@@ -1,6 +1,6 @@
+import { API } from '../lib/api'
 import { useEffect, useState } from 'react'
 
-const API = 'http://localhost:8000'
 
 const SORTS = [
     { key: 'status', label: 'Status' },

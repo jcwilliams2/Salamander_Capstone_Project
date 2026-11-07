@@ -1,6 +1,6 @@
+import { API } from '../lib/api'
 import { useEffect, useState } from 'react'
 
-const API = 'http://localhost:8000'
 
 function localDateISO(d = new Date()) {
     const mm = String(d.getMonth() + 1).padStart(2, '0')

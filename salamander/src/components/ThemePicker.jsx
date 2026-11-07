@@ -1,7 +1,7 @@
+import { API } from '../lib/api'
 import { useState, useEffect, useRef } from 'react'
 import { THEMES, applyTheme, getCachedTheme, cacheTheme } from '../theme/themes'
 
-const API = 'http://localhost:8000'
 
 export default function ThemePicker({ userId }) {
     const [theme, setTheme] = useState(getCachedTheme)

@@ -1,3 +1,4 @@
+import { API } from './lib/api'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabaseClient'
 import { EXPLORE_LEVELS } from './lib/exploreLevels'
@@ -56,7 +57,7 @@ function App() {
   useEffect(() => {
     if (!session) return
 
-    fetch(`http://localhost:8000/user-onboarding-status/${session.user.id}`)
+    fetch(`${API}/user-onboarding-status/${session.user.id}`)
       .then((res) => res.json())
       .then((data) => {
         setOnboardingComplete(data.onboarding_completed)
@@ -68,7 +69,7 @@ function App() {
   useEffect(() => {
     if (!userId || !isAnonymous) return
 
-    fetch(`http://localhost:8000/study/arm/${userId}`)
+    fetch(`${API}/study/arm/${userId}`)
       .then(async (res) => {
         const data = await res.json().catch(() => null)
         if (!res.ok || !data?.arm) throw new Error(`Unexpected response (${res.status})`)
@@ -84,7 +85,7 @@ function App() {
     if (!session || !armReady || !onboardingComplete || !onHome) return
 
     const mine = ++requestId.current
-    fetch(`http://localhost:8000/recommendations/personalized/${session.user.id}?explore=${EXPLORE_LEVELS[explore].value}`)
+    fetch(`${API}/recommendations/personalized/${session.user.id}?explore=${EXPLORE_LEVELS[explore].value}`)
       .then(async (res) => {
         const data = await res.json().catch(() => null)
         if (!res.ok || !Array.isArray(data?.recommendations)) {
@@ -107,7 +108,7 @@ function App() {
   function handleExploreChange(index) {
     setExplore(index)
     const mine = ++requestId.current
-    fetch(`http://localhost:8000/recommendations/personalized/${session.user.id}?explore=${EXPLORE_LEVELS[index].value}`)
+    fetch(`${API}/recommendations/personalized/${session.user.id}?explore=${EXPLORE_LEVELS[index].value}`)
       .then(async (res) => {
         const data = await res.json().catch(() => null)
         if (!res.ok || !Array.isArray(data?.recommendations)) {

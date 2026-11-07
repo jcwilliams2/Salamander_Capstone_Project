@@ -1,3 +1,4 @@
+import { API } from '../lib/api'
 import { useState } from 'react'
 
 const UP_COLOR = 'var(--success)'
@@ -49,7 +50,7 @@ function VoteControls({ userId, bookId, initialVote = 0 }) {
         const finalVote = vote === newVote ? 0 : newVote
         setLoading(true)
         try {
-            await fetch('http://localhost:8000/feedback', {
+            await fetch(`${API}/feedback`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user_id: userId, book_id: bookId, vote: finalVote }),

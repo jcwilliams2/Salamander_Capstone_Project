@@ -1,3 +1,4 @@
+import { API } from '../lib/api'
 import { useState } from 'react'
 
 const STATUS_OPTIONS = [
@@ -23,13 +24,13 @@ function StatusSelector({ userId, bookId, initialStatus = '' }) {
         setLoading(true)
         try {
             if (newStatus === '') {
-                await fetch('http://localhost:8000/reading-status', {
+                await fetch(`${API}/reading-status`, {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ user_id: userId, book_id: bookId }),
                 })
             } else {
-                await fetch('http://localhost:8000/reading-status', {
+                await fetch(`${API}/reading-status`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ user_id: userId, book_id: bookId, status: newStatus }),

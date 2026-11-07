@@ -1,7 +1,7 @@
+import { API } from '../lib/api'
 import { useState, useEffect } from 'react'
 import BookCardGrid from './BookCardGrid'
 
-const API = 'http://localhost:8000'
 
 function WantToReadPage({ userId }) {
     const [state, setState] = useState({ loading: true, books: [], failed: false })

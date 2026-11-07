@@ -1,6 +1,6 @@
+import { API } from '../lib/api'
 import { useEffect, useRef, useState } from 'react'
 
-const API = 'http://localhost:8000'
 
 const W = 1080
 const H = 1350

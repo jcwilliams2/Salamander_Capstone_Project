@@ -1,0 +1,28 @@
+# Salamander backend dependencies
+# Install with:  pip install -r requirements.txt
+# Python 3.12 recommended (see .python-version)
+
+# CPU-only PyTorch — the default Linux wheel bundles CUDA libraries (multiple GB) that
+# Railway doesn't need. This line makes pip prefer the small CPU build.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Web API
+fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
+
+# Database (Supabase / Postgres)
+supabase
+
+# External book APIs (Open Library, ISBNdb, Google Books, NYT Books)
+requests
+
+# Recommendation + embeddings (all-MiniLM-L6-v2 loads at startup in ingest.py)
+numpy
+sentence-transformers
+torch
+langdetect
+
+# Only needed to run evaluation.py locally — not required to serve the API:
+# scipy

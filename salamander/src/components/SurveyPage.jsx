@@ -1,7 +1,7 @@
+import { API } from '../lib/api'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
-const API = 'http://localhost:8000'
 
 const SCALE = ['Strongly disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly agree']
 
