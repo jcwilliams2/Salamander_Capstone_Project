@@ -222,8 +222,26 @@ def no_preference_fallback(n=10):
         return bestsellers[:n]
     return popularity_baseline_recommend(n)
 
+def _fetch_books_for_centroids(page_size=200):
+    import time
+    rows, start = [], 0
+    while True:
+        for attempt in range(3):
+            try:
+                batch = (supabase.table("books").select("genre_tags, embedding")
+                            .order("id").range(start, start + page_size - 1).execute().data)
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+                time.sleep(1.5 * (attempt + 1))
+        rows.extend(batch)
+        if len(batch) < page_size:
+            return rows
+        start += page_size
+
 def build_genre_centroids():
-    all_books = supabase.table("books").select("genre_tags, embedding").execute().data
+    all_books = _fetch_books_for_centroids()
 
     genre_embeddings = {}
     for book in all_books:
