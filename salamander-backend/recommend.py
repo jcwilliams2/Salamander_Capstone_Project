@@ -241,6 +241,12 @@ def _fetch_books_for_centroids(page_size=200):
         start += page_size
 
 def build_genre_centroids():
+    try:
+        rows = supabase.rpc("genre_centroids").execute().data
+        return {r["genre"]: json.loads(r["centroid"]) for r in rows if r.get("centroid")}
+    except Exception as e:
+        print(f"genre_centroids RPC unavailable ({e}); falling back to paged fetch")
+
     all_books = _fetch_books_for_centroids()
 
     genre_embeddings = {}
