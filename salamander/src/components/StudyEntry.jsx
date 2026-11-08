@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import HCaptcha from '@hcaptcha/react-hcaptcha'
 import { supabase } from '../lib/supabaseClient'
 
-const CONSENT_VERSION = '2026-10-v1'
+const CONSENT_VERSION = '2026-11-v2'
 
 function StudyEntry({ onStarted, onLogin }) {
     const [step, setStep] = useState('consent')
@@ -76,15 +76,15 @@ function StudyEntry({ onStarted, onLogin }) {
 
             <p><strong>What this study is.</strong> You are being invited to try Salamander, a prototype web app that recommends books, and to answer a short survey about the recommendations. The study compares two versions of how the app handles variety (diversity) in its recommendations. You will be randomly assigned to one version and you won't be told which one. Both versions are fully working.</p>
 
-            <p><strong>What you will do.</strong> Browse book recommendations, mark books as interesting or not interesting, and then complete a survey of about 10 minutes. The whole session takes about 15 to 20 minutes. You do it on your own, at your own pace, and no researcher is present.</p>
+            <p><strong>What you will do.</strong> Complete a brief captcha check, browse book recommendations, and mark at least 10 books as interesting or not interesting (for example, with the thumbs-up and thumbs-down buttons). Then you will complete a survey of about 10 minutes, which includes one attention-check question. The whole session takes about 15 to 20 minutes, and the length of your session is recorded. You do it on your own, at your own pace, and no researcher is present.</p>
 
-            <p><strong>Your privacy.</strong> Participation is anonymous. We do not ask for your name or email. Your clicks, ratings, settings and survey answers are linked only to a randomly generated session ID, not to your identity. Data is stored on a password-protected, encrypted drive that only the researcher can access, and it is deleted after the capstone is completed and archived. Results may be reported in aggregate in a capstone project and may be shared externally.</p>
+            <p><strong>Your privacy.</strong> Participation is anonymous. We do not ask for your name or email, and the researcher will not collect or use your IP address. The website's hosting, login and captcha services may process technical information, such as your IP address, under their own privacy policies. Your clicks, ratings, settings and survey answers are linked only to a randomly generated session ID, not to your identity. Data is stored in a password-protected cloud database that encrypts data at rest and that only the researcher can access, and it is deleted after the capstone is completed and archived. Results will be reported only in aggregate, de-identified form. They may be shared with the capstone committee and may appear in the researcher's capstone thesis and in future publications or presentations.</p>
 
             <p><strong>Risks and benefits.</strong> We expect minimal risk, no greater than normal web browsing. You may discover books or authors outside your usual reading. There is no payment or compensation.</p>
 
-            <p><strong>Taking part is your choice.</strong> You can close your browser at any time, even mid-session, with no penalty and no need to give a reason.</p>
+            <p><strong>Taking part is your choice.</strong> Taking part is voluntary. Choosing not to take part will not affect your standing, grades, or relationship with Full Sail University. You can close your browser at any time, even mid-session, with no penalty and no need to give a reason. Because your answers are anonymous, once you submit the survey it cannot be identified and removed.</p>
 
-            <p><strong>Questions.</strong> Researcher: Jerlisa Williams, M.S. Computer Science, Full Sail University, jcwilliams14@student.fullsail.edu.</p>
+            <p><strong>Questions.</strong> Researcher: Jerlisa Williams, M.S. Computer Science, Full Sail University, jcwilliams14@student.fullsail.edu. You may print or save this page for your records.</p>
 
             <label style={{ display: 'block', margin: '12px 0' }}>
                 <input type="checkbox" checked={isAdult} onChange={(e) => setIsAdult(e.target.checked)} />{' '}
