@@ -4,7 +4,7 @@
 
 Salamander is my M.S. Computer Science capstone at Full Sail University. It's a personal library app built around one tension: recommendations that feel **relevant** versus recommendations that keep your reading **diverse**. The name is wordplay—"book worm" meets "book dragon," and the salamander sits right between them.
 
-**Live demo:** _link goes here once the deployment is up_
+**Live demo:** [salamander-capstone-project.vercel.app](https://salamander-capstone-project.vercel.app)
 
 ## The question behind it
 
