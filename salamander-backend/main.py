@@ -21,6 +21,7 @@ from reading_dates import apply_date_edit
 from library import sort_library
 from monthly_summary import (summarize_month, finished_in_month, previous_month, month_counts,
                                 first_month, month_range, goal_progress, validate_month, validate_tz_offset)
+from book_detail import BOOK_COLUMNS, shape_book, attach_reader_state
 from supabase_client import supabase
 
 app = FastAPI()
@@ -291,6 +292,25 @@ def monthly_summary(user_id: str, today: str | None = None, tz_offset: int = 0,
     result["range"] = month_range(first_month(rows, tz_offset), (year, month), (day.year, day.month))
     result["goal_progress"] = goal_progress(goal, finished, year, month, tz_offset)
     return result
+
+@app.get("/books/{book_id}")
+def book_detail(book_id: str, user_id: str | None = None):
+    try:
+        rows = supabase.table("books").select(BOOK_COLUMNS).eq("id", book_id).execute().data
+    except Exception:
+        rows = []
+    if not rows:
+        raise HTTPException(status_code=404, detail="Book not found.")
+    book = shape_book(rows[0])
+    if not user_id:
+        return book
+    status_rows = (supabase.table("reading_status").select("status").eq("user_id", user_id)
+                    .eq("book_id", book_id).execute().data)
+    vote_rows = (supabase.table("feedback").select("vote").eq("user_id", user_id)
+                    .eq("book_id", book_id).execute().data)
+    return attach_reader_state(book,
+                                status_rows[0] if status_rows else None,
+                                vote_rows[0] if vote_rows else None)
 
 @app.get("/user-onboarding-status/{user_id}")
 def check_onboarding_status(user_id: str):
