@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import VoteControls from './VoteControls'
 import StatusSelector from './StatusSelector'
+import BookLink from './BookLink'
 
 function Cover({ url, title }) {
     const [failed, setFailed] = useState(false)
@@ -34,8 +35,10 @@ function BookCardGrid({ books, userId, onStatusChange }) {
                         if (e.target.tagName === 'SELECT') onStatusChange?.(book, e.target.value)
                     }}
                 >
-                    <Cover url={book.cover_url} title={book.title} />
-                    <div style={{ marginTop: '9px' }}><strong>{book.title}</strong></div>
+                    <BookLink id={book.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <Cover url={book.cover_url} title={book.title} />
+                        <div style={{ marginTop: '9px' }}><strong>{book.title}</strong></div>
+                    </BookLink>
                     <div style={{ marginBottom: '10px' }}>{book.author}</div>
                     <p style={{ fontSize: '0.9em', color: 'var(--text-muted)', margin: '0 auto 8px' }}>{book.explanation}</p>
                     {book.id && (

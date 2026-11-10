@@ -13,6 +13,7 @@ import DiversityPicks from './components/DiversityPicks'
 import ExplorationControl from './components/ExplorationControl'
 import ReadingDashboard from './components/ReadingDashboard'
 import LibraryPage from './components/LibraryPage'
+import BookPage from './components/BookPage'
 import StudyEntry from './components/StudyEntry'
 import SurveyPage from './components/SurveyPage'
 import ThemePicker from './components/ThemePicker'
@@ -94,6 +95,7 @@ function App() {
         if (mine === requestId.current) setRecommendations(data.recommendations)
       })
       .catch((err) => console.error('Failed to load recommendations', err))
+      // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, armReady, onboardingComplete, onHome])
 
   useEffect(() => {
@@ -197,6 +199,7 @@ function App() {
           <Route path="/catalog" element={<CatalogPage userId={session.user.id} />} />
           <Route path="/want-to-read" element={<WantToReadPage userId={session.user.id} />} />
           {!isAnonymous && <Route path="/library" element={<LibraryPage userId={session.user.id} />} />}
+          <Route path="/book/:id" element={<BookPage userId={session.user.id} />} />
           <Route path="/history" element={<ReadingDashboard userId={session.user.id} showGoal={!isAnonymous} />} />
           <Route path="/survey" element={<SurveyPage userId={session.user.id} />} />
           <Route path="*" element={<Navigate to="/" replace />} />

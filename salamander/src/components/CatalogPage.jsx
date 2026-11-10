@@ -2,6 +2,8 @@ import { API } from '../lib/api'
 import { useState, useEffect } from 'react'
 import VoteControls from './VoteControls'
 import StatusSelector from './StatusSelector'
+import BookLink from './BookLink'
+import { useSearchParams } from 'react-router-dom'
 
 const PAGE_SIZE = 24
 
@@ -30,8 +32,10 @@ function BookGrid({ books, userId}) {
         >
             {books.map((book) => (
                 <div key={book.id}>
-                    <Cover url={book.cover_url} title={book.title} />
-                    <div><strong>{book.title}</strong></div>
+                    <BookLink id={book.id}>
+                        <Cover url={book.cover_url} title={book.title} />
+                        <div><strong>{book.title}</strong></div>
+                    </BookLink>
                     <div>{book.author}</div>
                     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: '9px', gap: '8px', flexWrap: 'wrap' }}>
                         <VoteControls userId={userId} bookId={book.id} initialVote={book.vote} />
@@ -263,14 +267,34 @@ function RequestPrompt({ query, userId, auto, onAdded }) {
 }
 
 function CatalogPage({ userId }) {
-    const [query, setQuery] = useState('')
+    const [params, setParams] = useSearchParams()
+    const query = params.get('q') ?? ''
+    const page = Math.max(1, Number.parseInt(params.get('page'), 10) || 1)
+    const selected = params.getAll('genre')
     const [search, setSearch] = useState({ q: '', items: [], failed: false })
-    const [page, setPage] = useState(1)
     const [browse, setBrowse] = useState({ page: 0, items: [], total: 0, failed: false })
     const [genreOptions, setGenreOptions] = useState([])
-    const [selected, setSelected] = useState([])
     const [filtered, setFiltered] = useState({ key: '', items: [], total: 0, failed: false })
     const [refresh, setRefresh] = useState(0)
+
+    function update(changes) {
+        setParams((prev) => {
+            const next = new URLSearchParams(prev)
+            if ('q' in changes) {
+                if (changes.q) next.set('q', changes.q)
+                    else next.delete('q')
+            }
+            if ('page' in changes) {
+                if (changes.page > 1) next.set('page', String(changes.page))
+                else next.delete('page')
+            }
+            if ('genres' in changes) {
+                next.delete('genre')
+                changes.genres.forEach((g) => next.append('genre', g))
+            }
+            return next
+        }, { replace: true })
+    }
 
     const trimmed = query.trim()
     const searching = trimmed.length >= 2
@@ -370,23 +394,21 @@ function CatalogPage({ userId }) {
     }, [page, userId])
 
     function goToPage(next) {
-        setPage(next)
+        update({ page: next })
         window.scrollTo(0, 0)
     }
 
     function toggleGenre(genre) {
-        setSelected((prev) => (prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]))
-        setPage(1)
+        const next = selected.includes(genre) ? selected.filter((g) => g !== genre) : [...selected, genre]
+        update({ genres: next, page: 1 })
     }
 
     function clearGenres(){
-        setSelected([])
-        setPage(1)
+        update({ genres: [], page: 1 })
     }
 
     function handleQuery(e) {
-        setQuery(e.target.value)
-        if (filtering) setPage(1)
+        update(filtering ? { q: e.target.value, page: 1 } : { q: e.target.value })
     }
 
     return (
@@ -425,7 +447,7 @@ function CatalogPage({ userId }) {
                             query={trimmed}
                             userId={userId}
                             auto={search.items.length === 0}
-                            onAdded={(title) => { if (title) setQuery(title); setRefresh((r) => r + 1) }}
+                            onAdded={(title) => { if (title) update({ q: title }); setRefresh((r) => r + 1) }}
                         />
                     )}
                 </>

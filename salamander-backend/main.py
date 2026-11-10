@@ -21,7 +21,8 @@ from reading_dates import apply_date_edit
 from library import sort_library
 from monthly_summary import (summarize_month, finished_in_month, previous_month, month_counts,
                                 first_month, month_range, goal_progress, validate_month, validate_tz_offset)
-from book_detail import BOOK_COLUMNS, shape_book, attach_reader_state
+from book_detail import BOOK_COLUMNS, shape_book, tag_affinity, attach_reader_state
+from ingest import genre_support
 from supabase_client import supabase
 
 app = FastAPI()
@@ -301,7 +302,12 @@ def book_detail(book_id: str, user_id: str | None = None):
         rows = []
     if not rows:
         raise HTTPException(status_code=404, detail="Book not found.")
-    book = shape_book(rows[0])
+    row = rows[0]
+    book = shape_book(
+        row,
+        support=genre_support(row.get("raw_subjects")),
+        affinity=tag_affinity(row.get("embedding"), row.get("genre_tags") or [], genre_centroids),
+    )
     if not user_id:
         return book
     status_rows = (supabase.table("reading_status").select("status").eq("user_id", user_id)

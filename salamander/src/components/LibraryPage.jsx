@@ -1,5 +1,6 @@
 import { API } from '../lib/api'
 import { useEffect, useState } from 'react'
+import BookLink from './BookLink'
 
 
 const SORTS = [
@@ -56,9 +57,11 @@ function LibraryCard({ book }) {
 
     return (
         <article style={{ display: 'flex', gap: 14, padding: 12, background: 'var(--surface)', border: '1px solid var(--border)', borderLeft: `5px solid ${status.color}`, borderRadius: 10, textAlign: 'left' }}>
-            <Cover url={book.cover_url} title={book.title} />
+            <BookLink id={book.id} style={{ flexShrink: 0 }}>
+                <Cover url={book.cover_url} title={book.title} />
+            </BookLink>
             <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>{book.title}</div>
+                <div style={{ fontWeight: 600 }}><BookLink id={book.id}>{book.title}</BookLink></div>
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.9em' }}>{book.author}</div>
                 <div style={{ marginTop: 10, fontWeight: 600, color: status.color }}>{status.label}</div>
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.85em' }}>
