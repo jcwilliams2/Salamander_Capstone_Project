@@ -11,7 +11,9 @@ from recommend import (zero_history_recommend, build_genre_centroids,
                         get_current_bestsellers_with_covers, 
                         no_preference_fallback, 
                         personalized_recommend, invalidate_user_centroids,
-                        diversity_suggestions, genre_seed_recommend)
+                        diversity_suggestions, genre_seed_recommend,
+                        get_user_centroids, get_user_books_with_feedback,
+                        get_catalog_with_embeddings)
 from search import (search_catalog, browse_catalog, attach_user_state,
                     filter_catalog, list_genres)
 from catalog_request import find_external_matches, add_requested_book, RequestLimitError
@@ -22,7 +24,9 @@ from library import sort_library
 from monthly_summary import (summarize_month, finished_in_month, previous_month, month_counts,
                                 first_month, month_range, goal_progress, validate_month, validate_tz_offset)
 from book_detail import BOOK_COLUMNS, shape_book, tag_affinity, attach_reader_state
-from ingest import genre_support
+from explain import explain_book, catalog_similarities
+from ingest import genre_support, embedding_model
+from themes import shared_themes, contrast_themes
 from supabase_client import supabase
 
 app = FastAPI()
@@ -317,6 +321,44 @@ def book_detail(book_id: str, user_id: str | None = None):
     return attach_reader_state(book,
                                 status_rows[0] if status_rows else None,
                                 vote_rows[0] if vote_rows else None)
+
+def embed_many(texts):
+    return embedding_model.encode(list(texts))
+
+def _avoid_words(*books):
+    text = " ".join(f"{b.get('title') or ''} {b.get('author') or ''}" for b in books)
+    return re.findall(r"[A-Za-z]+", text)
+
+@app.get("/explain/{book_id}")
+def explain_any_book(book_id: str, user_id: str):
+    try:
+        rows = supabase.table("books").select(BOOK_COLUMNS).eq("id", book_id).execute().data
+    except Exception:
+        rows = []
+    if not rows:
+        raise HTTPException(status_code=404, detail="Book not found.")
+    row = rows[0]
+    ranked = shape_book(
+        row,
+        support=genre_support(row.get("raw_subjects")),
+        affinity=tag_affinity(row.get("embedding"), row.get("genre_tags") or [], genre_centroids),
+    ).get("genre_tags", [])
+
+    user_books, feedback = get_user_books_with_feedback(user_id)
+    rec_centroid, _div, _cached = get_user_centroids(user_id)
+    sims = catalog_similarities(rec_centroid, get_catalog_with_embeddings) if rec_centroid is not None else None
+    
+    def themes_for(anchor_id):
+        found = supabase.table("books").select("title, author, description").eq("id", anchor_id).execute().data
+        other = found[0] if found else {}
+        return shared_themes(row.get("description"), other.get("description"), embed_many,
+                                avoid=_avoid_words(row, other))
+
+    def contrast_for():
+        return contrast_themes(row.get("description"), rec_centroid, embed_many, avoid=_avoid_words(row))
+
+    return explain_book(row, user_books, feedback, rec_centroid, sims, tags=ranked[:4],
+                            themes_for=themes_for, contrast_for=contrast_for)
 
 @app.get("/user-onboarding-status/{user_id}")
 def check_onboarding_status(user_id: str):

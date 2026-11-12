@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import VoteControls from './VoteControls'
 import StatusSelector from './StatusSelector'
+import WhyButton from './WhyButton'
 import { API } from '../lib/api'
 
 function Cover({ url, title }) {
@@ -46,7 +47,7 @@ function TagList({ tags }) {
     )
 }
 
-function BookPage({ userId }) {
+function BookPage({ userId, showWhy }) {
     const { id } = useParams()
     const navigate = useNavigate()
     const key = `${id}|${userId ?? ''}`
@@ -123,6 +124,12 @@ function BookPage({ userId }) {
                         <p style={{ color: 'var(--text-muted)', marginBottom: '16px' }}>
                             Sign in to rate this book or add it to your library.
                         </p>
+                    )}
+
+                    {userId && showWhy && (
+                        <div style={{ marginBottom: '16px' }}>
+                            <WhyButton key={book.id} userId={userId} bookId={book.id} />
+                        </div>
                     )}
 
                     {book.synopsis && (

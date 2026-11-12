@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import VoteControls from './VoteControls'
 import StatusSelector from './StatusSelector'
 import BookLink from './BookLink'
+import WhyButton from './WhyButton'
 import { useSearchParams } from 'react-router-dom'
 
 const PAGE_SIZE = 24
@@ -19,7 +20,7 @@ function Cover({ url, title }) {
     return <img src={url} alt={title} onError={() => setFailed(true)} style={{ height: '160px' }} />
 }
 
-function BookGrid({ books, userId}) {
+function BookGrid({ books, userId, showWhy }) {
 
     return (
         <div
@@ -41,6 +42,7 @@ function BookGrid({ books, userId}) {
                         <VoteControls userId={userId} bookId={book.id} initialVote={book.vote} />
                         <StatusSelector userId={userId} bookId={book.id} initialStatus={book.status} />
                     </div>
+                    {showWhy && <WhyButton userId={userId} bookId={book.id} />}
                 </div>
             ))}
         </div>
@@ -266,7 +268,7 @@ function RequestPrompt({ query, userId, auto, onAdded }) {
     )
 }
 
-function CatalogPage({ userId }) {
+function CatalogPage({ userId, showWhy }) {
     const [params, setParams] = useSearchParams()
     const query = params.get('q') ?? ''
     const page = Math.max(1, Number.parseInt(params.get('page'), 10) || 1)
@@ -432,7 +434,7 @@ function CatalogPage({ userId }) {
                     {filterReady && !filtered.failed && filtered.items.length === 0 && (
                         <p>No books match {selected.join(' or ')}{searching ? ` for "${trimmed}"` : ''}.</p>
                     )}
-                    {filterReady && !filtered.failed && <BookGrid books={filtered.items} userId={userId} />}
+                    {filterReady && !filtered.failed && <BookGrid books={filtered.items} userId={userId} showWhy={showWhy} />}
                     <Pager page={page} totalPages={filterPages} onGo={goToPage} />
                 </>
             ) : searching ? (
@@ -440,7 +442,7 @@ function CatalogPage({ userId }) {
                     {!searchReady && <p>Searching...</p>}
                     {searchReady && search.failed && <p style={{ color: 'var(--danger)' }}>Search failed. Please try again.</p>}
                     {searchReady && !search.failed && search.items.length === 0 && <p>No books found for "{trimmed}".</p>}
-                    {searchReady && !search.failed && <BookGrid books={search.items} userId={userId} />}
+                    {searchReady && !search.failed && <BookGrid books={search.items} userId={userId} showWhy={showWhy} />}
                     {searchReady && !search.failed && (
                         <RequestPrompt
                             key={`${trimmed}|${search.items.length === 0}`}
@@ -455,7 +457,7 @@ function CatalogPage({ userId }) {
                 <>
                     {!browseReady && <p>Loading catalog...</p>}
                     {browseReady && browse.failed && <p style={{ color: 'var(--danger)' }}>Couldn't load the catalog. Please try again.</p>}
-                    {browseReady && !browse.failed && <BookGrid books={browse.items} userId={userId} />}
+                    {browseReady && !browse.failed && <BookGrid books={browse.items} userId={userId} showWhy={showWhy} />}
                     <Pager page={page} totalPages={totalPages} onGo={goToPage} />
                 </>
             )}
