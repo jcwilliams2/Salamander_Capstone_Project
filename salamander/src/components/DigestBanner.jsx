@@ -17,20 +17,27 @@ const muted = { color: 'var(--text-muted)', margin: '4px 0 0', fontSize: '0.9em'
 
 function DigestBanner({ userId }) {
     const [digest, setDigest] = useState(null)
-
+    
     useEffect(() => {
         const controller = new AbortController()
-        fetch(`${API}/digest/${userId}`, { signal: controller.signal })
-            .then(async (res) => {
-                const data = await res.json().catch(() => null)
-                if (!res.ok || !data || !('digest' in data)) throw new Error(`Unexpected response (${res.status})`)
-                setDigest(data.digest)
-            })
-            .catch((err) => {
-                if (err.name === 'AbortError') return
-                console.error('Failed to load your digest', err)
-            })
-        return () => controller.abort()
+        function load() {
+            fetch(`${API}/digest/${userId}`, { signal: controller.signal })
+                .then(async (res) => {
+                    const data = await res.json().catch(() => null)
+                    if (!res.ok || !data || !('digest' in data)) throw new Error(`Unexpected response (${res.status})`)
+                    setDigest(data.digest)
+                })
+                .catch((err) => {
+                    if (err.name === 'AbortError') return
+                    console.error('Failed to load your digest', err)
+                })
+        }
+        load()
+        window.addEventListener('digest-reopened', load)
+        return () => {
+            controller.abort()
+            window.removeEventListener('digest-reopened', load)
+        }
     }, [userId])
 
     function dismiss() {
@@ -58,8 +65,7 @@ function DigestBanner({ userId }) {
                 Variety score {digest.score_percent}
                 {previous !== null && ` (was ${previous} last time)`}
                 {' '}· based on {digest.books_considered} finished or stopped books. It describes how far apart your books 
-                sit from each other. There's no best score, a higher or lower score isn't better or worse. It's most useful for comparing 
-                with your own earlier digests.
+                sit from each other. There's no best score, and it's most useful for comparing with your own earlier digests.
             </p>
             {digest.picks?.length > 0 && (
                 <>

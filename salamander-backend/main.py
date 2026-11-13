@@ -432,6 +432,18 @@ def mark_digest_seen(digest_id: str, request: DigestSeenRequest):
         raise HTTPException(status_code=404, detail="Digest not found.")
     return {"success": True}
 
+class DigestReopenRequest(BaseModel):
+    user_id: str
+
+@app.post("/digest/reopen")
+def reopen_digest(request: DigestReopenRequest):
+    rows = (supabase.table("diversity_digests").select("id").eq("user_id", request.user_id)
+                .order("created_at", desc=True).limit(1).execute().data)
+    if not rows:
+        raise HTTPException(status_code=404, detail="No digest yet.")
+    supabase.table("diversity_digests").update({"seen_at": None}).eq("id", rows[0]["id"]).execute()
+    return {"success": True}
+
 @app.get("/user-onboarding-status/{user_id}")
 def check_onboarding_status(user_id: str):
     result = supabase.table("profiles").select("onboarding_completed").eq("id", user_id).execute()

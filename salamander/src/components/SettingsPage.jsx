@@ -1,5 +1,6 @@
 import ThemePicker from './ThemePicker'
 import DigestFrequencyPicker from './DigestFrequencyPicker'
+import DigestReopenButton from './DigestReopenButton'
 
 const card = {
     background: 'var(--surface)',
@@ -29,6 +30,7 @@ function SettingPage({ userId }) {
                     appears the next time you open Salamander once this much time has passed since your last one.
                 </p>
                 <DigestFrequencyPicker userId={userId} />
+                <DigestReopenButton userId={userId} />
             </div>
         </section>
     )
