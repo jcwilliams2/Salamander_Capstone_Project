@@ -16,7 +16,8 @@ import LibraryPage from './components/LibraryPage'
 import BookPage from './components/BookPage'
 import StudyEntry from './components/StudyEntry'
 import SurveyPage from './components/SurveyPage'
-import ThemePicker from './components/ThemePicker'
+import DigestBanner from './components/DigestBanner'
+import SettingsPage from './components/SettingsPage'
 import { applyTheme, DEFAULT_THEME } from './theme/themes'
 
 const navStyle = ({ isActive }) => ({ fontWeight: isActive ? 'bold' : 'normal'})
@@ -172,9 +173,20 @@ function App() {
           <NavLink to="/history" style={navStyle}>Reading History</NavLink>
           {isAnonymous && <NavLink to="/survey" style={navStyle}>Finish & take survey</NavLink>}
           <span className="nav-email" title={session.user.email}>{session.user.email}</span>
-          {!isAnonymous && <ThemePicker userId={session.user.id} />}
+          {!isAnonymous && (
+            <NavLink to="/settings" style={navStyle} aria-label="Settings" title="Settings">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+                style={{ display: 'block' }}>
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </NavLink>
+          )}
           {!session.user.is_anonymous && <button onClick={() => supabase.auth.signOut()}>Log out</button>}
         </nav>
+
+        {!isAnonymous && <DigestBanner userId={session.user.id} />}
         
         <Routes>
           <Route
@@ -199,6 +211,7 @@ function App() {
           <Route path="/catalog" element={<CatalogPage userId={session.user.id} showWhy={!isAnonymous} />} />
           <Route path="/want-to-read" element={<WantToReadPage userId={session.user.id} />} />
           {!isAnonymous && <Route path="/library" element={<LibraryPage userId={session.user.id} />} />}
+          {!isAnonymous && <Route path="/settings" element={<SettingsPage userId={session.user.id} />} />}
           <Route path="/book/:id" element={<BookPage userId={session.user.id} showWhy={!isAnonymous} />} />
           <Route path="/history" element={<ReadingDashboard userId={session.user.id} showGoal={!isAnonymous} />} />
           <Route path="/survey" element={<SurveyPage userId={session.user.id} />} />

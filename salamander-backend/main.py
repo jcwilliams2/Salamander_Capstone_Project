@@ -13,7 +13,11 @@ from recommend import (zero_history_recommend, build_genre_centroids,
                         personalized_recommend, invalidate_user_centroids,
                         diversity_suggestions, genre_seed_recommend,
                         get_user_centroids, get_user_books_with_feedback,
-                        get_catalog_with_embeddings)
+                        get_catalog_with_embeddings, DIVERSITY_STATUSES, 
+                        diversity_score)
+from diversity_digest import (digest_due, build_findings, unseen_digest,
+                                DIGEST_PICKS, FREQUENCIES, DEFAULT_FREQUENCY,
+                                frequency_options, validate_frequency, days_for)
 from search import (search_catalog, browse_catalog, attach_user_state,
                     filter_catalog, list_genres)
 from catalog_request import find_external_matches, add_requested_book, RequestLimitError
@@ -359,6 +363,74 @@ def explain_any_book(book_id: str, user_id: str):
 
     return explain_book(row, user_books, feedback, rec_centroid, sims, tags=ranked[:4],
                             themes_for=themes_for, contrast_for=contrast_for)
+
+DIGEST_COLUMNS = "id, created_at, findings, seen_at"
+
+class DigestFrequencyRequest(BaseModel):
+    user_id: str
+    frequency: str
+
+def get_digest_frequency(user_id):
+    try:
+        rows = supabase.table("profiles").select("digest_frequency").eq("id", user_id).execute().data
+    except Exception:
+        return DEFAULT_FREQUENCY
+    value = rows[0].get("digest_frequency") if rows else None
+    return value if value in FREQUENCIES else DEFAULT_FREQUENCY
+
+@app.get("/digest-settings/{user_id}")
+def digest_settings(user_id: str):
+    return {"frequency": get_digest_frequency(user_id), "options": frequency_options()}
+
+@app.post("/digest-settings")
+def set_digest_frequency(request: DigestFrequencyRequest):
+    try:
+        frequency = validate_frequency(request.frequency)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    result = supabase.table("profiles").update({"digest_frequency": frequency}).eq("id", request.user_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="No profile found for this user")
+    return {"frequency": frequency}
+
+def make_digest_findings(user_id, previous_score):
+    user_books, _ = get_user_books_with_feedback(user_id)
+    eligible = [b for b in user_books if b.get("status") in DIVERSITY_STATUSES]
+    score = diversity_score(eligible)
+    if score is None:
+        return None
+    picks = diversity_suggestions(user_id, n=DIGEST_PICKS)
+    return build_findings(score, previous_score, picks, len(eligible))
+
+@app.get("/digest/{user_id}")
+def get_digest(user_id: str):
+    rows = (supabase.table("diversity_digests").select(DIGEST_COLUMNS).eq("user_id", user_id)
+                .order("created_at", desc=True).limit(1).execute().data)
+    latest = rows[0] if rows else None
+    if digest_due(latest["created_at"] if latest else None, days=days_for(get_digest_frequency(user_id))):
+        previous = ((latest or {}).get("findings") or {}).get("score")
+        findings = make_digest_findings(user_id, previous)
+        if findings:
+            created = supabase.table("diversity_digests").insert(
+                {"user_id": user_id, "findings": findings}).execute().data
+            if created:
+                latest = created[0]
+    return {"digest": unseen_digest(latest)}
+
+class DigestSeenRequest(BaseModel):
+    user_id: str
+
+@app.post("/digest/{digest_id}/seen")
+def mark_digest_seen(digest_id: str, request: DigestSeenRequest):
+    try:
+        updated = (supabase.table("diversity_digests")
+                    .update({"seen_at": datetime.now(timezone.utc).isoformat()})
+                    .eq("id", digest_id).eq("user_id", request.user_id).execute().data)
+    except Exception:
+        updated = []
+    if not updated:
+        raise HTTPException(status_code=404, detail="Digest not found.")
+    return {"success": True}
 
 @app.get("/user-onboarding-status/{user_id}")
 def check_onboarding_status(user_id: str):
