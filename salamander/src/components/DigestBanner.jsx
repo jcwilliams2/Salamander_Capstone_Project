@@ -58,7 +58,8 @@ function DigestBanner({ userId }) {
                 Variety score {digest.score_percent}
                 {previous !== null && ` (was ${previous} last time)`}
                 {' '}· based on {digest.books_considered} finished or stopped books. It describes how far apart your books 
-                sit from each other. A higher or lower score isn't better or worse.
+                sit from each other. There's no best score, a higher or lower score isn't better or worse. It's most useful for comparing 
+                with your own earlier digests.
             </p>
             {digest.picks?.length > 0 && (
                 <>
