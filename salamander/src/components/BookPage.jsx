@@ -47,7 +47,7 @@ function TagList({ tags }) {
     )
 }
 
-function BookPage({ userId, showWhy }) {
+function BookPage({ userId, showWhy, canCompare }) {
     const { id } = useParams()
     const navigate = useNavigate()
     const key = `${id}|${userId ?? ''}`
@@ -65,7 +65,7 @@ function BookPage({ userId, showWhy }) {
             })
             .catch((err) => {
                 console.error('Failed to load book', err)
-                return { status: 'ready', book: null }
+                return { status: 'error', book: null }
             })
             .then((outcome) => {
                 if (!cancelled) setResult({ key, ...outcome })
@@ -130,6 +130,12 @@ function BookPage({ userId, showWhy }) {
                         <div style={{ marginBottom: '16px' }}>
                             <WhyButton key={book.id} userId={userId} bookId={book.id} />
                         </div>
+                    )}
+
+                    {canCompare && (
+                        <p style={{ margin: '0 0 16px' }}>
+                            <Link to={`/compare?a=${encodeURIComponent(book.id)}`}>Compare with another book</Link>
+                        </p>
                     )}
 
                     {book.synopsis && (

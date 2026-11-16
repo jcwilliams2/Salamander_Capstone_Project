@@ -29,6 +29,7 @@ from monthly_summary import (summarize_month, finished_in_month, previous_month,
                                 first_month, month_range, goal_progress, validate_month, validate_tz_offset)
 from book_detail import BOOK_COLUMNS, shape_book, tag_affinity, attach_reader_state
 from explain import explain_book, catalog_similarities
+from compare import compare_books, book_vector
 from ingest import genre_support, embedding_model
 from themes import shared_themes, contrast_themes
 from supabase_client import supabase
@@ -363,6 +364,36 @@ def explain_any_book(book_id: str, user_id: str):
 
     return explain_book(row, user_books, feedback, rec_centroid, sims, tags=ranked[:4],
                             themes_for=themes_for, contrast_for=contrast_for)
+
+def ranked_tags(row):
+    return shape_book(
+        row,
+        support=genre_support(row.get("raw_subjects")),
+        affinity=tag_affinity(row.get("embedding"), row.get("genre_tags") or [], genre_centroids),
+    ).get("genre_tags", [])
+
+@app.get("/compare")
+def compare_two_books(a: str, b: str):
+    if a == b:
+        raise HTTPException(status_code=400, detail="Pick two different books.")
+    try:
+        rows = supabase.table("books").select(BOOK_COLUMNS).in_("id", [a, b]).execute().data
+    except Exception:
+        rows = []
+    by_id = {r["id"]: r for r in rows}
+    if a not in by_id or b not in by_id:
+        raise HTTPException(status_code=404, detail="Book not found.")
+    row_a, row_b = dict(by_id[a]), dict(by_id[b])
+    row_a["genre_tags"], row_b["genre_tags"] = ranked_tags(row_a)[:4], ranked_tags(row_b)[:4]
+    vec_a, vec_b = book_vector(row_a), book_vector(row_b)
+    sims_a = catalog_similarities(vec_a, get_catalog_with_embeddings) if vec_a is not None else None
+    sims_b = catalog_similarities(vec_b, get_catalog_with_embeddings) if vec_b is not None else None
+
+    def themes():
+        return shared_themes(row_a.get("description"), row_b.get("description"), embed_many,
+                                avoid=_avoid_words(row_a, row_b))
+    
+    return compare_books(row_a, row_b, sims_a, sims_b, themes_fn=themes)
 
 DIGEST_COLUMNS = "id, created_at, findings, seen_at"
 

@@ -22,7 +22,7 @@ GENERIC = frozenset(
     "national page pages chapter chapters bibliographic record records reprint reprints reproduction "
     "facsimile novelist writer writers young old little great good big small large literary fiction nonfiction narrative everyday impactful alive "
     "ebook ebooks kindle audiobook paperback hardcover isbn publisher copyright "
-    "bookstore bookstores bookshop bookshops greatest best finest worst racist".split()
+    "bookstore bookstores bookshop bookshops greatest best finest worst racist blacks whites".split()
 )
 
 VERBS = frozenset(
@@ -110,8 +110,12 @@ def _unit(matrix):
     norms[norms == 0] = 1.0
     return matrix / norms
 
+def _stem_words(phrase):
+    return {w[:-1] if len(w) > 3 and w.endswith("s") else w for w in phrase.split()}
+
 def _overlaps(phrase, chosen):
-    return any(phrase in c or c in phrase for c in chosen)
+    words = _stem_words(phrase)
+    return any(phrase in c or c in phrase or words & _stem_words(c) for c in chosen)
 
 def _pick(phrases, scores, vecs, limit, lam=0.7):
     chosen, chosen_idx = [], []

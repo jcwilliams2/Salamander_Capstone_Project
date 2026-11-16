@@ -14,6 +14,7 @@ import ExplorationControl from './components/ExplorationControl'
 import ReadingDashboard from './components/ReadingDashboard'
 import LibraryPage from './components/LibraryPage'
 import BookPage from './components/BookPage'
+import ComparePage from './components/ComparePage'
 import StudyEntry from './components/StudyEntry'
 import SurveyPage from './components/SurveyPage'
 import DigestBanner from './components/DigestBanner'
@@ -212,7 +213,8 @@ function App() {
           <Route path="/want-to-read" element={<WantToReadPage userId={session.user.id} />} />
           {!isAnonymous && <Route path="/library" element={<LibraryPage userId={session.user.id} />} />}
           {!isAnonymous && <Route path="/settings" element={<SettingsPage userId={session.user.id} />} />}
-          <Route path="/book/:id" element={<BookPage userId={session.user.id} showWhy={!isAnonymous} />} />
+          <Route path="/book/:id" element={<BookPage userId={session.user.id} showWhy={!isAnonymous} canCompare={!isAnonymous} />} />
+          {!isAnonymous && <Route path="/compare" element={<ComparePage />} />}
           <Route path="/history" element={<ReadingDashboard userId={session.user.id} showGoal={!isAnonymous} />} />
           <Route path="/survey" element={<SurveyPage userId={session.user.id} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
