@@ -4,6 +4,7 @@ import os
 import requests
 from collections import Counter
 from datetime import date, datetime, timezone
+from bestseller_cache import cached_bestsellers
 from supabase_client import supabase
 
 _nyt_cache = {"data": None, "next_publish_date": None}
@@ -216,7 +217,14 @@ def popularity_baseline_recommend(n=10):
     result = supabase.table("books").select("id, title, author").order("created_at").limit(n).execute()
     return result.data
 
-def no_preference_fallback(n=10):
+def no_preference_fallback(n=10, exclude_ids=None):
+    try:
+        cached = cached_bestsellers(n, exclude_ids)
+    except Exception as e:
+        print(f" Cached bestsellers unavailable: {e}")
+        cached = []
+    if cached:
+        return cached
     bestsellers = get_current_bestsellers_with_covers()
     if bestsellers:
         return bestsellers[:n]

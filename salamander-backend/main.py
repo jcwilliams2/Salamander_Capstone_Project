@@ -8,13 +8,13 @@ from datetime import date, datetime, timezone
 from collections import Counter
 from collaborative import recommend_with_strategy
 from recommend import (zero_history_recommend, build_genre_centroids, 
-                        get_current_bestsellers_with_covers, 
                         no_preference_fallback, 
                         personalized_recommend, invalidate_user_centroids,
                         diversity_suggestions, genre_seed_recommend,
                         get_user_centroids, get_user_books_with_feedback,
                         get_catalog_with_embeddings, DIVERSITY_STATUSES, 
                         diversity_score)
+from bestseller_cache import cached_bestsellers
 from diversity_digest import (digest_due, build_findings, unseen_digest,
                                 DIGEST_PICKS, FREQUENCIES, DEFAULT_FREQUENCY,
                                 frequency_options, validate_frequency, days_for)
@@ -69,7 +69,7 @@ def get_onboarding_recommendations(request: OnboardingRequest):
 
 @app.get("/recommendations/returning-no-history")
 def get_returning_user_feed():
-    return {"recommendations": get_current_bestsellers_with_covers()}
+    return {"recommendations": no_preference_fallback(15)}
 
 class FeedbackRequest(BaseModel):
     user_id: str
@@ -165,14 +165,14 @@ def flag_book(request: BookFlagRequest):
                     .eq("kind", kind).execute().data)
     if existing:
         if existing[0]["status"] != "open":
-            raise HTTPException(status_code=409, detail="We've already reviewed your report for this books.")
+            raise HTTPException(status_code=409, detail="We've already reviewed your report for this book.")
         (supabase.table("book_flags").update({"suggested_pages": pages, "note": note, "updated_at": now})
             .eq("id", existing[0]["id"]).execute())
         return {"flagged": True, "updated": True}
     open_flags = (supabase.table("book_flags").select("id").eq("user_id", request.user_id).eq("status", "open")
                     .execute().data)
     if len(open_flags) >= MAX_OPEN_FLAGS:
-        raise HTTPException(status_code=429, detail="You've reached the limit while your other reports reports are reviewed.")
+        raise HTTPException(status_code=429, detail="You've reached the limit while your other reports are reviewed.")
     supabase.table("book_flags").insert({"user_id": request.user_id, "book_id": request.book_id, "kind": kind,
                     "suggested_pages": pages, "note": note}).execute()
     return {"flagged": True, "updated": False}
@@ -724,6 +724,9 @@ def submit_survey(request: SurveyRequest):
         raise HTTPException(status_code=409, detail="Your survey has already been submitted.")
     return {"success": True}
 
+def logged_book_ids(user_id):
+    return [r["book_id"] for r in supabase.table("reading_status").select("book_id").eq("user_id", user_id).execute().data]
+
 @app.get("/recommendations/personalized/{user_id}")
 def get_personalized_feed(user_id: str, explore: float = 0.0, strategy: str = "hybrid"):
     if get_study_arm(user_id) == "A":
@@ -732,7 +735,7 @@ def get_personalized_feed(user_id: str, explore: float = 0.0, strategy: str = "h
     if not recs:
         recs = genre_seed_feed(user_id, n=12, explore=explore)
     if not recs:
-        recs = no_preference_fallback(15)
+        recs = no_preference_fallback(15, exclude_ids=logged_book_ids(user_id))
     return {"recommendations": recs}
 
 @app.get("/recommendations/diversity/{user_id}")
