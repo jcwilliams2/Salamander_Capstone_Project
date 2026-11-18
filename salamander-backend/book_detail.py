@@ -1,7 +1,7 @@
 import json
 import numpy as np
 
-BOOK_COLUMNS = "id, title, author, cover_url, description, genre_tags, isbn, raw_subjects, embedding"
+BOOK_COLUMNS = "id, title, author, cover_url, description, genre_tags, isbn, raw_subjects, embedding, page_count"
 
 def _clean_text(value):
     if not isinstance(value, str):
@@ -52,12 +52,19 @@ def shape_book(row, support=None, affinity=None):
         value = _clean_text(row.get(source))
         if value:
             book[key] = value
+    pages = row.get("page_count")
+    if isinstance(pages, int) and not isinstance(pages, bool) and pages > 0:
+        book["page_count"] = pages
     tags = _clean_tags(row.get("genre_tags"))
     if tags:
         book["genre_tags"] = rank_tags(tags, support, affinity)
     return book
 
 def attach_reader_state(book, status_row, vote_row):
-    book["status"] = (status_row or {}).get("status") or ""
+    status_row = status_row or {}
+    book["status"] = status_row.get("status") or ""
     book["vote"] = (vote_row or {}).get("vote") or 0
+    for key in ("progress_percent", "current_page"):
+        if status_row.get(key) is not None:
+            book[key] = status_row[key]
     return book

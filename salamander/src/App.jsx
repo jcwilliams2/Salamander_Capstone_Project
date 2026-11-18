@@ -213,7 +213,7 @@ function App() {
           <Route path="/want-to-read" element={<WantToReadPage userId={session.user.id} />} />
           {!isAnonymous && <Route path="/library" element={<LibraryPage userId={session.user.id} />} />}
           {!isAnonymous && <Route path="/settings" element={<SettingsPage userId={session.user.id} />} />}
-          <Route path="/book/:id" element={<BookPage userId={session.user.id} showWhy={!isAnonymous} canCompare={!isAnonymous} />} />
+          <Route path="/book/:id" element={<BookPage userId={session.user.id} showWhy={!isAnonymous} canCompare={!isAnonymous} canFlag={!isAnonymous} />} />
           {!isAnonymous && <Route path="/compare" element={<ComparePage />} />}
           <Route path="/history" element={<ReadingDashboard userId={session.user.id} showGoal={!isAnonymous} />} />
           <Route path="/survey" element={<SurveyPage userId={session.user.id} />} />

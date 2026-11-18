@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import GoalPace from './GoalPace'
 import ReadingLog from './ReadingLog'
 import MonthCard from './MonthCard'
+import CurrentlyReading from './CurrentlyReading'
 
 const RECENT_PLACEMENT = 'top'
 
@@ -291,6 +292,7 @@ function ReadingDashboard({ userId, showGoal = true }) {
                 </>
             ) : (
                 <>
+                    <CurrentlyReading userId={userId} refreshKey={refreshKey} />
                     {RECENT_PLACEMENT === 'top' && <RecentReads userId={userId} refreshKey={refreshKey} />}
                     <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap', marginTop: '25px' }}>
                         <Tile label="Finished" value={s.finished} color="var(--status-finished)" />

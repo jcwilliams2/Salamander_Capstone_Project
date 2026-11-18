@@ -8,6 +8,7 @@ import math
 import unicodedata
 from collections import Counter
 from names import flip_name
+from page_counts import clean_page_count, open_library_pages
 from langdetect import detect, LangDetectException
 from sentence_transformers import SentenceTransformer
 from supabase_client import supabase
@@ -218,6 +219,7 @@ def fetch_isbndb_metadata(isbn):
         "description": book.get("synopsis") or book.get("excerpt"),
         "genre_tags": book.get("subjects"),
         "cover_url": book.get("image"),
+        "page_count": clean_page_count(book.get("pages")),
     }
 
 def fetch_google_books_metadata(isbn):
@@ -256,6 +258,7 @@ def fetch_google_books_metadata(isbn):
         "description": volume_info.get("description"),
         "genre_tags": volume_info.get("categories"),
         "cover_url": volume_info.get("imageLinks", {}).get("thumbnail"),
+        "page_count": clean_page_count(volume_info.get("pageCount")),
     }
 
 def safe_get_json(url, retries=3):
@@ -322,8 +325,20 @@ def fetch_open_library_metadata(isbn):
         "isbn": isbn,
         "description": description,
         "genre_tags": genre_tags,
-        "cover_url": cover_url
+        "cover_url": cover_url,
+        "page_count": open_library_pages(edition),
     }
+
+def fetch_page_count(isbn):
+    edition = safe_get_json(f"http://openlibrary.org/isbn/{isbn}.json")
+    pages = open_library_pages(edition)
+    if pages:
+        return pages, "open_library"
+    for name, fetcher in (("isbndb", fetch_isbndb_metadata), ("google_books", fetch_google_books_metadata)):
+        data = fetcher(isbn)
+        if data and data.get("page_count"):
+            return data["page_count"], name
+    return None, None
 
 def get_book_metadata(isbn):
     ol_data = fetch_open_library_metadata(isbn)
@@ -356,7 +371,7 @@ def get_book_metadata(isbn):
         "google_books": fetch_google_books_metadata,
     }
     for name, fetcher in alt_fetchers.items():
-        if raw_subjects and author and primary.get("cover_url"):
+        if raw_subjects and author and primary.get("cover_url") and primary.get("page_count"):
             break
         if name in source_tier:
             continue
@@ -372,6 +387,9 @@ def get_book_metadata(isbn):
         if not primary.get("cover_url") and alt.get("cover_url"):
             primary["cover_url"] = alt.get("cover_url")
             print(f" Backfilled cover_url for {isbn} from {name}")
+        if not primary.get("page_count") and alt.get("page_count"):
+            primary["page_count"] = alt.get("page_count")
+            print(f" Backfilled page_count for {isbn} from {name}")
 
     primary["source_tier"] = source_tier
     primary["author"] = author

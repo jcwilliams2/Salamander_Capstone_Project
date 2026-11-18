@@ -24,6 +24,7 @@ from catalog_request import find_external_matches, add_requested_book, RequestLi
 from reading_goals import (validate_goal, validate_year, compute_pace, finished_count_for_year,
                             next_started_at, average_days_to_finish)
 from reading_dates import apply_date_edit
+from reading_progress import validate_progress, progress_after_status_change
 from library import sort_library
 from monthly_summary import (summarize_month, finished_in_month, previous_month, month_counts,
                                 first_month, month_range, goal_progress, validate_month, validate_tz_offset)
@@ -31,6 +32,7 @@ from book_detail import BOOK_COLUMNS, shape_book, tag_affinity, attach_reader_st
 from explain import explain_book, catalog_similarities
 from compare import compare_books, book_vector
 from ingest import genre_support, embedding_model
+from book_flags import validate_flag, MAX_OPEN_FLAGS
 from themes import shared_themes, contrast_themes
 from supabase_client import supabase
 
@@ -92,24 +94,88 @@ class ReadingStatusRequest(BaseModel):
 @app.post("/reading-status")
 def update_reading_status(request: ReadingStatusRequest):
     now = datetime.now(timezone.utc).isoformat()
-    existing_rows = (supabase.table("reading_status").select("status, started_at, finished_at")
+    existing_rows = (supabase.table("reading_status")
+                        .select("status, started_at, finished_at, progress_percent, current_page")
                         .eq("user_id", request.user_id).eq("book_id", request.book_id)
                         .execute().data)
     existing = existing_rows[0] if existing_rows else {}
+    percent, page = progress_after_status_change(existing.get("status"), request.status,
+                                                    existing.get("progress_percent"), existing.get("current_page"))
     row = {
         "user_id": request.user_id,
         "book_id": request.book_id,
         "status": request.status,
         "updated_at": now,
         "finished_at": None,
-        "started_at": next_started_at(existing.get("status"), existing.get("started_at"),
-                                        request.status, now),
+        "started_at": next_started_at(existing.get("status"), existing.get("started_at"), request.status, now),
+        "progress_percent": percent,
+        "current_page": page,
     }
     if request.status == "finished":
         row["finished_at"] = existing.get("finished_at") or now
     supabase.table("reading_status").upsert(row, on_conflict="user_id,book_id").execute()
     invalidate_user_centroids(request.user_id)
     return {"success": True}
+
+class ReadingProgressRequest(BaseModel):
+    user_id: str
+    book_id: str
+    percent: int | None = None
+    page: int | None = None
+
+@app.post("/reading-progress")
+def update_reading_progress(request: ReadingProgressRequest):
+    rows = (supabase.table("reading_status").select("status")
+                .eq("user_id", request.user_id).eq("book_id", request.book_id).execute().data)
+    if not rows:
+        raise HTTPException(status_code=404, detail="That book isn't in your reading log.")
+    if rows[0]["status"] != "reading":
+        raise HTTPException(status_code=409, detail="Progress can only be set for a book you're reading.")
+    books = supabase.table("books").select("page_count").eq("id", request.book_id).execute().data
+    page_count = books[0].get("page_count") if books else None
+    try:
+        percent, page = validate_progress(request.percent, request.page, page_count)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    (supabase.table("reading_status").update({"progress_percent": percent, "current_page": page})
+        .eq("user_id", request.user_id).eq("book_id", request.book_id).execute())
+    return {"progress_percent": percent, "current_page": page, "page_count": page_count}
+
+class BookFlagRequest(BaseModel):
+    user_id: str
+    book_id: str
+    kind: str = "page_count"
+    suggested_pages: int | None = None
+    note: str | None = None
+
+@app.post("/book-flags")
+def flag_book(request: BookFlagRequest):
+    try:
+        kind, pages, note = validate_flag(request.kind, request.suggested_pages, request.note)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        found = supabase.table("books").select("id").eq("id", request.book_id).execute().data
+    except Exception:
+        found = []
+    if not found:
+        raise HTTPException(status_code=404, detail="Book not found.")
+    now = datetime.now(timezone.utc).isoformat()
+    existing = (supabase.table("book_flags").select("id, status").eq("user_id", request.user_id).eq("book_id", request.book_id)
+                    .eq("kind", kind).execute().data)
+    if existing:
+        if existing[0]["status"] != "open":
+            raise HTTPException(status_code=409, detail="We've already reviewed your report for this books.")
+        (supabase.table("book_flags").update({"suggested_pages": pages, "note": note, "updated_at": now})
+            .eq("id", existing[0]["id"]).execute())
+        return {"flagged": True, "updated": True}
+    open_flags = (supabase.table("book_flags").select("id").eq("user_id", request.user_id).eq("status", "open")
+                    .execute().data)
+    if len(open_flags) >= MAX_OPEN_FLAGS:
+        raise HTTPException(status_code=429, detail="You've reached the limit while your other reports reports are reviewed.")
+    supabase.table("book_flags").insert({"user_id": request.user_id, "book_id": request.book_id, "kind": kind,
+                    "suggested_pages": pages, "note": note}).execute()
+    return {"flagged": True, "updated": False}
 
 @app.get("/reading-stats/{user_id}")
 def reading_stats(user_id: str):
@@ -165,6 +231,22 @@ def recent_finished(user_id: str, limit: int = 3):
             if r["book_id"] in by_id
         ]
     }
+
+@app.get("/currently-reading/{user_id}")
+def currently_reading(user_id: str):
+    rows = (supabase.table("reading_status").select("book_id, started_at, progress_percent, current_page")
+                .eq("user_id", user_id).eq("status", "reading").execute().data)
+    if not rows:
+        return {"books": []}
+    rows.sort(key=lambda r: r.get("started_at") or "", reverse=True)
+    ids = [r["book_id"] for r in rows]
+    books = (supabase.table("books").select("id, title, author, cover_url, page_count").in_("id", ids).execute().data)
+    by_id = {b["id"]: b for b in books}
+    return {"books": [
+        {**by_id[r["book_id"]], "started_at": r["started_at"], "progress_percent": r.get("progress_percent"), 
+            "current_page": r.get("current_page")}
+        for r in rows if r["book_id"] in by_id
+    ]}
 
 @app.get("/want-to-read/{user_id}")
 def want_to_read_list(user_id: str):
@@ -238,15 +320,16 @@ def reading_log(user_id: str):
 
 @app.get("/library/{user_id}")
 def library(user_id: str, sort: str = "status"):
-    rows = (supabase.table("reading_status").select("book_id, status, added_at")
+    rows = (supabase.table("reading_status").select("book_id, status, added_at, progress_percent, current_page")
                 .eq("user_id", user_id).execute().data)
     by_id = {}
     ids = [r["book_id"] for r in rows]
     for i in range(0, len(ids), 100):
         chunk = ids[i: i + 100]
-        for b in supabase.table("books").select("id, title, author, cover_url").in_("id", chunk).execute().data:
+        for b in supabase.table("books").select("id, title, author, cover_url, page_count").in_("id", chunk).execute().data:
             by_id[b["id"]] = b
-    items = [{**by_id[r["book_id"]], "status": r["status"], "added_at": r["added_at"]}
+    items = [{**by_id[r["book_id"]], "status": r["status"], "added_at": r["added_at"],
+                "progress_percent": r.get("progress_percent"), "current_page": r.get("current_page")}
                 for r in rows if r["book_id"] in by_id]
     try:
         ordered = sort_library(items, sort)
@@ -319,8 +402,8 @@ def book_detail(book_id: str, user_id: str | None = None):
     )
     if not user_id:
         return book
-    status_rows = (supabase.table("reading_status").select("status").eq("user_id", user_id)
-                    .eq("book_id", book_id).execute().data)
+    status_rows = (supabase.table("reading_status").select("status, progress_percent, current_page")
+                    .eq("user_id", user_id).eq("book_id", book_id).execute().data)
     vote_rows = (supabase.table("feedback").select("vote").eq("user_id", user_id)
                     .eq("book_id", book_id).execute().data)
     return attach_reader_state(book,

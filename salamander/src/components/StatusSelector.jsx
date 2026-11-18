@@ -15,28 +15,29 @@ const STATUS_COLOR = {
     dnf: 'var(--status-dnf)',
 }
 
-function StatusSelector({ userId, bookId, initialStatus = '' }) {
-    const [status, setStatus] = useState(initialStatus)
+function StatusSelector({ userId, bookId, initialStatus = '', status: controlledStatus, onStatusChange }) {
+    const [ownstatus, setOwnStatus] = useState(initialStatus)
     const [loading, setLoading] = useState(false)
+    const status = controlledStatus ?? ownstatus
 
     async function handleChange(e) {
         const newStatus = e.target.value
         setLoading(true)
         try {
-            if (newStatus === '') {
-                await fetch(`${API}/reading-status`, {
+            const res = newStatus === ''
+                ? await fetch(`${API}/reading-status`, {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ user_id: userId, book_id: bookId }),
                 })
-            } else {
-                await fetch(`${API}/reading-status`, {
+                : await fetch(`${API}/reading-status`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ user_id: userId, book_id: bookId, status: newStatus }),
                 })
-            }
-            setStatus(newStatus)
+            if (!res.ok) throw new Error(`Unexpected response (${res.status})`)
+            setOwnStatus(newStatus)
+            if (onStatusChange) onStatusChange(newStatus)
         } catch (err) {
             console.error('Failed to update status', err)
         } finally {

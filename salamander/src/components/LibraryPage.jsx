@@ -1,6 +1,8 @@
 import { API } from '../lib/api'
 import { useEffect, useState } from 'react'
 import BookLink from './BookLink'
+import ProgressBar from './ProgressBar'
+import { describeProgress } from '../lib/progress'
 
 
 const SORTS = [
@@ -60,13 +62,21 @@ function LibraryCard({ book }) {
             <BookLink id={book.id} style={{ flexShrink: 0 }}>
                 <Cover url={book.cover_url} title={book.title} />
             </BookLink>
-            <div style={{ minWidth: 0 }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontWeight: 600 }}><BookLink id={book.id}>{book.title}</BookLink></div>
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.9em' }}>{book.author}</div>
                 <div style={{ marginTop: 10, fontWeight: 600, color: status.color }}>{status.label}</div>
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.85em' }}>
                     {year ? `Added ${year}` : 'Added date unknown'}
                 </div>
+                {book.status === 'reading' && (
+                    <div style={{ marginTop: 10 }}>
+                        <ProgressBar percent={book.progress_percent ?? 0} label={`Progress on ${book.title}`} />
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.85em', marginTop: 4 }}>
+                            {describeProgress(book.progress_percent, book.current_page, book.page_count)}
+                        </div>
+                    </div>
+                )}
             </div>
         </article>
     )
